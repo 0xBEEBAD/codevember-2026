@@ -88,3 +88,31 @@ The profiler uses seed 2, five warmup renders and 18 measured renders per state.
 ## Assets
 
 The rocks use CC0 photogrammetry scans from Poly Haven: **Boulder 01** by Rico Cilliers and **Rock 07** by Jenelle van Heerden. Geometry and 2K diffuse, normal and packed AO/roughness/metalness maps are served locally; textures use WebP. Source and license links are in [`assets/rocks/CREDITS.txt`](assets/rocks/CREDITS.txt).
+
+## Video capture
+
+The 60-second loop uses the other days' silent 1024 × 1024 H.264 MP4 format at 30 fps. Frames render at 1536 × 1536 before downsampling; the title and collapsed Settings label use √2 UI scale. The recording follows the existing automatic experiment with its current materials, lights and camera movement.
+
+The capture uses seed 2 and starts 8.7 simulation seconds into the sequence. Playback runs at 1973/1800 of normal speed so two matching retreats after completed fractures land exactly 60 video seconds apart. A 36-frame circular dissolve joins those retreats through the mist. The 61.2-second source becomes an exact 60-second loop; the final frame leads into the following source frame at the start, without a repeated endpoint or a hard reset. This edit is confined to the capture scripts.
+
+Keep the local server running and start a separate receiver:
+
+```sh
+python3 scripts/capture-server.py exports/tension-source.mp4 --previews
+```
+
+In a separate local preview tab with a 1024 × 1024 viewport at device scale 1:
+
+```js
+await (await import("./scripts/capture-video.js")).captureVideo();
+```
+
+Capture advances a fixed timeline and sends ordered lossless PNGs with encoder backpressure. It preserves the current appearance settings, disables interaction during recording and restores settings and the interface afterward. Keep the tab visible and its viewport fixed. `window.captureProgress` reports progress and exposes `cancel()`. The receiver verifies dimensions, frame count, frame rate and duration; selected PNG previews and metadata are saved beside the source video.
+
+Finish the loop with:
+
+```sh
+python3 scripts/loop-video.py exports/tension-source.mp4 exports/tension-loop-60s.mp4
+```
+
+FFmpeg and FFprobe must be on PATH. Existing video outputs are never overwritten, and all generated files stay under ignored `exports/`.

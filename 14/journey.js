@@ -377,7 +377,7 @@ export class BreakingJourney {
       Math.max(
         cameraDistance(chainCount) + (this.rockTethers ? 8.6 : 3.4),
         halfWidth / (aspect * tangent),
-      ) * 0.8
+      ) * 0.64
     );
   }
   cameraDestination(aspect) {
