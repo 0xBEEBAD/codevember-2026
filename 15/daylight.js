@@ -3,9 +3,9 @@ import { Vector3 } from 'three/webgpu';
 // Sun azimuth/elevation and incident energy. SkyMesh, SunLight, IBL and haze
 // derive their colors from this same direction, rather than color overlays.
 export const daylightPresets = {
-  Dawn: { elevation: 14, azimuth: 65, sun: 3.8, ambient: 1.9, exposure: 1.8, turbidity: 2.8, rayleigh: 1.35, mie: .0035, haze: .0002, cloudPhase: -600 },
-  Day: { direction: [-.62, .56, .55], sun: 4.3, ambient: 1, exposure: 1.1, turbidity: 4.8, rayleigh: 1.8, mie: .005, haze: .0003, cloudPhase: 0 },
-  Sunset: { elevation: 8, azimuth: -65, sun: 4.4, ambient: 1.5, exposure: 1.7, turbidity: 6, rayleigh: 1.8, mie: .007, haze: .00042, cloudPhase: 800 }
+  Dawn: { elevation: 14, azimuth: 65, sun: 3.8, ambient: 1.9, exposure: 1.8, turbidity: 2.8, rayleigh: 1.35, mie: .0045, haze: .0002, cloudPhase: -600 },
+  Day: { direction: [-.62, .56, .55], sun: 4.3, ambient: 1, exposure: 1.1, turbidity: 4.8, rayleigh: 1.8, mie: .008, haze: .0003, cloudPhase: 0 },
+  Sunset: { elevation: 8, azimuth: -65, sun: 4.4, ambient: 1.5, exposure: 1.7, turbidity: 6, rayleigh: 1.8, mie: .009, haze: .00042, cloudPhase: 800 }
 };
 const lightingKeys = ['sun', 'ambient', 'exposure', 'turbidity', 'rayleigh', 'mie', 'haze'];
 

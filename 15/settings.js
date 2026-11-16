@@ -1,7 +1,7 @@
 import GUI from 'three/addons/libs/lil-gui.module.min.js';
 
 export function createSettings(reducedMotion) {
-  return { view: 'Rover', timeOfDay: 'Day', dust: 2, wheelDust: 1, paused: reducedMotion, drift: !reducedMotion, heat: 1.6, mirage: .78, mirageScale: 5, mirageNear: 25, haze: .0003, clouds: .43, turbidity: 4.8, rayleigh: 1.8, mie: .005, cloudDensity: .6, cloudShadows: 1, cloudElevation: .9, cloudScale: .00036, sun: 4.3, ambient: 1, relief: 1, exposure: 1.1, saturation: .98, contrast: 1.06, bloom: .12, vignette: .4, ao: .58, ssgi: true, gi: 14, giRadius: 24, resolution: 1.25, meshlets: false, lod: 3, lodDither: true };
+  return { view: 'Rover', timeOfDay: 'Day', dust: 2, wheelDust: 1, paused: reducedMotion, drift: !reducedMotion, heat: 1.6, mirage: .78, mirageScale: 5, mirageNear: 25, haze: .0003, clouds: .43, turbidity: 4.8, rayleigh: 1.8, mie: .008, cloudDensity: .6, cloudShadows: 1, cloudElevation: .9, cloudScale: .00036, sun: 4.3, ambient: 1, relief: 1, exposure: 1.1, saturation: .98, contrast: 1.06, bloom: .12, vignette: .4, ao: .58, ssgi: true, gi: 14, giRadius: 24, resolution: 1.25, meshlets: false, lod: 3, lodDither: true };
 }
 export function createSettingsPanel(settings, actions, performanceInfo) {
   const gui = new GUI({ title: 'Settings', width: 245 });
@@ -19,7 +19,7 @@ export function createSettingsPanel(settings, actions, performanceInfo) {
   air.add(settings, 'drift').name('Camera drift').listen();
   air.add(actions, 'reset').name('Reset view');
   const sky = gui.addFolder('Sky');
-  sky.add(settings, 'turbidity', 1, 12, .1).name('Turbidity').listen();
+  sky.add(settings, 'turbidity', 1, 12, .1).name('Base turbidity').listen();
   sky.add(settings, 'rayleigh', .2, 3, .05).name('Rayleigh').listen();
   sky.add(settings, 'mie', .0001, .02, .00005).name('Mie scattering').listen();
   sky.add(settings, 'clouds', 0, .8, .01).name('Cloud coverage');

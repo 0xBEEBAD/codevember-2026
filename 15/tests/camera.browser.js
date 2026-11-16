@@ -104,3 +104,34 @@ export async function checkRubbleCamera(app = window.mirage) {
     app.post.invalidate(); await new Promise(requestAnimationFrame); app.render(); app.manual = manual;
   }
 }
+
+export function checkCameraMotion() {
+  const camera = new PerspectiveCamera(52, 1, .25, 1000), canvas = document.createElement('canvas');
+  const settings = { view: 'Rover', paused: false, drift: true };
+  const bodyClass = document.body.className, hud = document.querySelector('#rover-hud'), hidden = hud?.hidden;
+  const navigation = createCameraControls(camera, canvas, settings, () => {});
+  const rover = { position: new Vector3(), yaw: 0, moving: false, active: false, speed: 0, update() {}, clipCamera() {} };
+  const baseline = camera.clone(); let time = 0, maximumAngle = 0, maximumStep = 0;
+  try {
+    navigation.attachRover(rover); navigation.setView('Rover');
+    const eye = camera.position.clone(), radius = eye.distanceTo(navigation.controls.target);
+    let previous = camera.quaternion.clone();
+    const step = () => {
+      time += 1 / 60; navigation.update(1 / 60, time);
+      baseline.position.copy(camera.position); baseline.lookAt(navigation.controls.target);
+      maximumAngle = Math.max(maximumAngle, baseline.quaternion.angleTo(camera.quaternion));
+      maximumStep = Math.max(maximumStep, previous.angleTo(camera.quaternion)); previous.copy(camera.quaternion);
+      assert(Math.abs(camera.position.distanceTo(navigation.controls.target) - radius) < 1e-8, 'Camera sway changed chase distance');
+    };
+    for (let i = 0; i < 1800; i++) step();
+    assert(maximumAngle > .001 && maximumAngle < .006, 'Idle camera movement is absent or excessive');
+    assert(camera.position.distanceTo(eye) < 1e-8, 'Sway accumulated into the camera position');
+    rover.speed = 12; rover.moving = true; for (let i = 0; i < 600; i++) step();
+    assert(maximumAngle < .008 && maximumStep < .001, 'Driving vibration jumps or shakes too strongly');
+    settings.drift = false; for (let i = 0; i < 300; i++) step();
+    assert(baseline.quaternion.angleTo(camera.quaternion) < 1e-6, 'Reduced-motion setting did not disable sway');
+    return { maximumAngleDegrees: maximumAngle * 180 / Math.PI, maximumFrameStepDegrees: maximumStep * 180 / Math.PI, radius, noPositionalDrift: true, reducedMotionRespected: true };
+  } finally {
+    navigation.dispose(); document.body.className = bodyClass; if (hud) hud.hidden = hidden;
+  }
+}

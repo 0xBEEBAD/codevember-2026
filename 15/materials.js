@@ -1,5 +1,5 @@
 import { MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, DataTexture, RGBAFormat, RepeatWrapping, LinearFilter, LinearMipmapLinearFilter, FrontSide } from 'three/webgpu';
-import { Fn, If, attribute, positionWorld, positionView, normalWorld, normalView, cameraViewMatrix, texture, mat3, vec2, vec3, vec4, float, mix, uniform, sin, smoothstep, mrt, diffuseColor } from 'three/tsl';
+import { Fn, If, attribute, positionWorld, positionView, normalWorld, normalView, cameraViewMatrix, texture, mat3, vec2, vec3, vec4, float, mix, uniform, sin, cos, smoothstep, mrt, diffuseColor } from 'three/tsl';
 import { randomSeed, smoothstep as smoothCPU } from './noise.js';
 import { sampleSediment } from './rock-geometry.js';
 
@@ -227,7 +227,7 @@ export function createMaterials() {
   const sand = new MeshStandardNodeMaterial({ roughness: 1 });
   // A mirage belongs to the level playa; the sloping faces of dunes stay dry.
   sand.mrtNode = mrt({ diffuse: vec4(diffuseColor.rgb, normalWorld.y.smoothstep(.985, .999)) });
-  const p = positionWorld, big = texture(grain, p.xz.mul(.009)), small = texture(grain, p.xz.mul(.8));
+  const p = positionWorld, big = texture(grain, p.xz.mul(.009));
   const phase = p.z.mul(9.5).add(p.x.mul(2.3)).add(big.g.mul(14)).add(sin(p.x.mul(.13)).mul(2));
   // Derivative filtering stops subpixel ripples sparkling in the distance.
   const footprint = phase.dFdx().abs().add(phase.dFdy().abs());
@@ -263,9 +263,28 @@ export function createMaterials() {
   const screeColor = mix(vec3(.36, .27, .18), vec3(.50, .38, .26), geology.r);
   const uplandColor = mix(bedrockColor, screeColor, slope).mul(rockAltitudeTint(geology.g));
   sand.colorNode = mix(desertColor, uplandColor, mountain);
-  const sandRelief = ripple.mul(.014).add(sandDrift.mul(.025)).add(sandWave.mul(.07)).mul(crust.mul(.85).oneMinus()).add(grit.r.mul(crust).mul(.07)).add(small.r.mul(.002));
-  const uplandRelief = mix(beds.mul(.3).add(geology.r.mul(1.5)), sandWave.mul(.18).add(geology.r.mul(.65)), slope);
-  sand.normalNode = perturb(mix(sandRelief, uplandRelief, mountain), float(1));
+  // Differentiate the physical detail, not the screen-space filter, altitude
+  // mask or interpolated slope. Derivatives of those masks produced diagonal
+  // dark bands at grazing angles and across large terrain triangles.
+  const grainSlope = scale => {
+    const gradient = texture(rockGradient, p.xz.mul(scale)).xy.mul(255).sub(128).mul(1024 / 510 * scale);
+    return vec3(gradient.x, 0, gradient.y);
+  };
+  const waveSlope = vec3(.055, 0, .24).mul(cos(broadPhase)).mul(broadVisible);
+  const driftSlope = vec3(.29, 0, 1.45).mul(cos(driftPhase)).mul(driftVisible);
+  const rippleSlope = vec3(cos(p.x.mul(.13)).mul(.26).add(2.3), 0, 9.5)
+    .mul(sin(phase).mul(.5).add(.5)).mul(cos(phase)).mul(visible);
+  const sandGradient = rippleSlope.mul(.014).add(driftSlope.mul(.025)).add(waveSlope.mul(.07))
+    .mul(crust.mul(.85).oneMinus()).add(grainSlope(.11).mul(crust).mul(.07)).add(grainSlope(.8).mul(.002));
+  const strataSlope = vec3(.012, .055, .007).mul(cos(strataPhase)).mul(strataFilter);
+  const geologySlope = grainSlope(.00075);
+  const uplandGradient = mix(strataSlope.mul(.3).add(geologySlope.mul(1.5)), waveSlope.mul(.18).add(geologySlope.mul(.65)), slope);
+  const sandNormal = Fn(() => {
+    const gradient = mix(sandGradient, uplandGradient, mountain).toVar();
+    const tangent = gradient.sub(normalWorld.mul(gradient.dot(normalWorld)));
+    return cameraViewMatrix.mul(vec4(normalWorld.sub(tangent).normalize(), 0)).xyz;
+  });
+  sand.normalNode = sandNormal();
   const dark = new MeshStandardNodeMaterial({ color: '#4e3726', roughness: 1 });
   const inlay = new MeshStandardNodeMaterial({ roughness: .82 });
   inlay.colorNode = mix(vec3(.038, .095, .105), vec3(.14, .24, .25), texture(grain, positionWorld.xy.mul(.28)).g);

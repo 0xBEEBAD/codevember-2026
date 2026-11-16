@@ -40,10 +40,10 @@ Settings expose lighting, GI, clouds, dust, heat distortion, surface relief, ren
 Three.js WebGPURenderer and TSL are pinned to [commit 6281ce3](https://github.com/mrdoob/three.js/commit/6281ce3fd4c3e8c4b4b204dd5a942f77ab313f6f). Local extensions add meshlet LOD dithering, bounded GPU queue allocations, shared cloud transmission and cascade-scaled shadow bias.
 
 - **Geology:** 32 seeded rock variants, fractured faces, irregular sediment beds, subtractive weathering and multiscale erosion. Baked signed curvature reveals exposed edges and sheltered hollows. Triplanar mineral textures, strata, altitude and correlated instance colors produce orange/brown sandstone variation. Sanctuary foundations interlock with smaller rock clusters and rubble.
-- **Landscape:** detailed nearby dunes join progressively coarser terrain rings extending 200 km in every direction. Distant ranges contain overlapping, wind-shaped crests with varied height and orientation. Rounded windward and lee slopes avoid sharp noise cusps; wavelengths expand with mesh spacing and fine folds fade before becoming undersampled. Shared edge heights prevent ring cracks, and sampled heightfield gradients avoid triangle-shaped shading bands.
+- **Landscape:** detailed nearby dunes join progressively coarser terrain rings extending 200 km in every direction. Distant ranges use connected ridges and saddles. A seeded heightfield redistributes steep deposits into neighboring slopes, with bicubic reconstruction for continuous gradients. This is a procedural talus approximation, not a geological simulation. Tessellation is concentrated in the background ranges instead of empty plains. Terrain rings explicitly stitch every boundary vertex, including when tessellation decreases; collision queries follow those same triangles. Filtered world-space sand gradients avoid grazing-angle bump bands.
 - **Sanctuary:** instanced carved masonry, galleries, columns, a vaulted doorway and a supported staircase. Sandstone is accented with green and orange marble and satin gold. The stairs retain their original sandstone with orange marble handrails and post caps. A bright doorway beacon projects a slowly rotating procedural seal onto the floor and arriving rover.
 - **Lighting:** SunLight with two cached 4096 × 5120 shadow cascades, SSGI with GTAO occlusion and temporal denoising, plus PMREM-filtered sky/cloud IBL. The sky, sunlight and cloud shadows share sun direction and a world-anchored cloud field. Animated cloud transmission updates every frame; stationary fields reuse their map.
-- **Atmosphere:** sky-derived clear-air fog fades distant terrain into the horizon. Dawn, Day and Sunset interpolate the sun, exposure, scattering, haze and cloud phase together over two seconds. Cloud shadows attenuate direct sunlight; fog does not receive full volumetric cloud shadowing.
+- **Atmosphere:** sky-derived clear-air fog fades distant terrain into the horizon. Regional drifting dust raises effective sky turbidity; the sky, altitude-dependent aerosol haze and direct sun transmission share extinction coefficients. Wheel puffs remain local. This is an artistic coupling of regional dust loading, not a volumetric fluid model. Dawn, Day and Sunset interpolate the sun, exposure, scattering, haze and cloud phase together over two seconds. Cloud shadows attenuate direct sunlight; fog does not receive full volumetric cloud shadowing.
 - **Mirage:** a planar Reflector captures off-screen objects and sky. A grazing-angle mask, stable basin plane and hot-ground strength produce an inferior mirage. Reflection and dust are composited before shared heat distortion, with foreground and silhouette guards. This is an artistic planar approximation, not a numerical curved-ray solution or thermal-history simulation.
 - **Dust:** procedural soft sprites form drifting wisps across 16 anchored regions and camera-local sand, plus contact-driven tire spray. A bounded 1,024-particle pool samples terrain, scene depth, sunlight, cloud transmission and sky fill. Particles soften against opaque geometry and are composited after GI. They do not cast shadows or simulate a volumetric fluid.
 
@@ -53,18 +53,18 @@ The scene has 8,465 rock instances, 8,856 masonry instances and roughly 181 mill
 
 Box3D drives the rigid chassis with four independently suspended tires, steering forces, reverse and braking. A moving collision patch uses terrain triangles, shared procedural rock collision meshes and nearby masonry. Coordinates rebase locally for long drives. Tire sweeps climb small stones; a camera sphere sweep protects the eased chase camera from real obstacles without snapping to oversized rock bounds.
 
-Sand contacts stamp subtle tread impressions into a bounded ring of 8,192 instances. Tracks and wheel spray follow each tire's steering and travel direction, and stop on stone or unsupported wheels. The camera keeps its follow radius through turns and continues easing after input ends.
+Sand contacts stamp subtle tread impressions into a bounded ring of 8,192 instances. Tracks and wheel spray follow each tire's steering and travel direction, and stop on stone or unsupported wheels. The camera keeps its follow radius through turns and continues easing after input ends. Gentle idle sway and speed-dependent vibration affect only its final orientation, leaving the chase distance and collision sweep stable. Camera drift and reduced-motion settings disable the sway.
 
 ## Source map
 
 | Modules | Responsibility |
 | --- | --- |
-| `noise.js`, `rock-geometry.js`, `rock-shaping.js`, `curvature.js` | Terrain, seeded geology, erosion and curvature |
+| `noise.js`, `terrain-relaxation.js`, `terrain-stitch.js`, `rock-geometry.js`, `rock-shaping.js`, `curvature.js` | Terrain, seeded geology, erosion and curvature |
 | `landscape.js`, `island-bedrock.js`, `scene-details.js`, `desert-grass.js` | Layout, rock clusters, foundations, ruins and grass |
 | `architecture.js`, `sanctuary-light.js` | Sanctuary, stairs, masonry colliders and projected seal |
 | `materials.js` | Generated textures and material shading |
 | `rover.js`, `rover-input.js`, `rover-model.js`, `rover-physics.js`, `wheel-tracks.js` | Vehicle, keyboard/touch input, physics and tracks |
-| `atmosphere.js`, `cloud-shadows.js`, `daylight.js` | Sky, IBL, sunlight, haze and time presets |
+| `atmosphere.js`, `atmosphere-model.js`, `cloud-shadows.js`, `daylight.js` | Sky, IBL, sunlight, haze and time presets |
 | `indirect-lighting.js`, `mirage-reflector.js`, `post-processing.js`, `dust.js` | GI, reflections, heat, particles and final composition |
 | `mirage-pipeline.js`, `vendor/` | Local three.js rendering extensions |
 | `camera.js`, `settings.js`, `main.js` | Camera, settings and rendering lifecycle |
@@ -76,11 +76,13 @@ npm ci
 npm test
 ```
 
-CPU tests cover geometry, curvature, joystick response, vehicle dynamics, terrain continuity, smooth dune crests and mirage conditions. Browser diagnostics run from the console after `window.mirage.ready` is true:
+CPU tests cover geometry, curvature, joystick response, vehicle dynamics, terrain continuity, smooth dune crests, terrain stitching, talus relaxation, aerosol transmission and mirage conditions. Browser diagnostics run from the console after `window.mirage.ready` is true:
 
 ```js
 (await import('./tests/rover-input.browser.js')).checkRoverInput();
 (await import('./tests/camera.browser.js')).checkCameraEasing();
+(await import('./tests/camera.browser.js')).checkCameraMotion();
+(await import('./tests/terrain.browser.js')).checkTerrain();
 await (await import('./tests/camera.browser.js')).checkRubbleCamera();
 await (await import('./tests/rendering.browser.js')).checkRendering();
 await (await import('./tests/heat.browser.js')).checkHeat();

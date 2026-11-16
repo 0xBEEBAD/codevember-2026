@@ -1,3 +1,5 @@
+import { relaxTerrain, sampleTerrain } from './terrain-relaxation.js';
+
 export function randomSeed(seed) {
   let state = seed >>> 0;
   return () => {
@@ -59,40 +61,47 @@ function mountainNoise(x, z, seed) {
     + corner(i + ix, j + iz, dx - ix + .21132486540518713, dz - iz + .21132486540518713)
     + corner(i + 1, j + 1, dx - .5773502691896257, dz - .5773502691896257)), -1, 1);
 }
+const rangeFields = new Map(), RANGE_SIZE = 257;
+function rangeField(range) {
+  if (rangeFields.has(range)) return rangeFields.get(range);
+  const [, , rx, rz, height] = mountainRanges[range];
+  const field = new Float32Array(RANGE_SIZE * RANGE_SIZE), seed = 137 + range * 23;
+  // Connected, branching drainage divides rather than products of periodic
+  // dune waves. Broad saddles join the peaks; smaller relief follows the same
+  // parent ridge instead of growing independent cones on its slopes.
+  for (let z = 0; z < RANGE_SIZE; z++) for (let x = 0; x < RANGE_SIZE; x++) {
+    const dx = x / (RANGE_SIZE - 1) * 4 - 2, dz = z / (RANGE_SIZE - 1) * 4 - 2;
+    const radius2 = dx * dx + dz * dz;
+    const wx = dx + mountainNoise(dx * 1.3, dz * 1.3, seed) * .16;
+    const wz = dz + mountainNoise(dx * 1.1, dz * 1.1, seed + 7) * .13;
+    const u = wx * 3.4 + wz * 1.1, v = wz * 2.7 - wx * .6;
+    // A rounded absolute value keeps ridge slopes continuous. In particular,
+    // no cusp can flip a normal between two coarse terrain-ring samples.
+    const ridge = value => (1 - Math.sqrt(value * value + .012)) ** 2;
+    const spine = ridge(mountainNoise(u, v, seed + 11));
+    const foothill = ridge(mountainNoise(u * 2.07 + 17, v * 2.07 - 9, seed + 29));
+    const folded = ridge(mountainNoise(u * 4.13 - 5, v * 4.13 + 23, seed + 47));
+    const relief = .06 + spine * .66 + spine * foothill * .32 + spine * foothill * folded * .12;
+    const envelope = Math.exp(-radius2 * 1.25);
+    const edge = (1 - smoothstep(1.65, 2, Math.abs(dx))) * (1 - smoothstep(1.65, 2, Math.abs(dz)));
+    field[z * RANGE_SIZE + x] = envelope * relief * height * 1.35 * edge;
+  }
+  const relaxed = relaxTerrain(field, RANGE_SIZE, 4 * rx / (RANGE_SIZE - 1), 4 * rz / (RANGE_SIZE - 1));
+  rangeFields.set(range, relaxed); return relaxed;
+}
 function mountainHeight(x, z) {
   if (z > -1800) return 0;
-  let envelope = 0;
-  for (const [cx, cz, rx, rz, height] of mountainRanges) {
+  let elevation = 0;
+  for (let range = 0; range < mountainRanges.length; range++) {
+    const [cx, cz, rx, rz] = mountainRanges[range];
     const dx = (x - cx) / rx, dz = (z - cz) / rz;
-    envelope = Math.max(envelope, Math.exp(-(dx * dx + dz * dz) * 2.8) * height);
+    if (Math.abs(dx) >= 2 || Math.abs(dz) >= 2) continue;
+    const h = sampleTerrain(rangeField(range), RANGE_SIZE, (dx + 2) * .25 * (RANGE_SIZE - 1), (dz + 2) * .25 * (RANGE_SIZE - 1));
+    // Smooth union preserves a continuous grade where neighbouring ranges
+    // meet, instead of leaving a crease through the saddle.
+    elevation = (elevation ** 4 + h ** 4) ** .25;
   }
-  // Each envelope contains several overlapping, sinuous dune crests. The
-  // envelope is only their height limit: a broad pedestal made entire ranges
-  // read as single hemispheres from the basin.
-  const wx = x + mountainNoise(x * .00012, z * .00012, 9) * 1300;
-  const wz = z + mountainNoise(x * .00011, z * .00011, 31) * 1100;
-  const radius = Math.hypot(x, z), detail = 1 - smoothstep(18000, 50000, radius);
-  // Expand the wavelength with the mesh spacing. Small distant folds must
-  // disappear before they can alias into the old serrated triangle pattern.
-  const frequency = .00048 / (1 + smoothstep(8000, 80000, radius) * 8 + smoothstep(80000, 200000, radius) * 10);
-  const nx = wx * frequency, nz = wz * frequency;
-  const cycle = nx * .88 + nz * .46 + mountainNoise(nx * .42, nz * .42, 53) * .48;
-  function dune(phase, crest) {
-    const t = phase - Math.floor(phase);
-    // Smooth slopes on both sides of the crest and at the period boundary.
-    // A narrow but rounded lee face avoids a cusp between triangle rows.
-    return t < crest ? smoothstep(0, crest, t) : 1 - smoothstep(crest, 1, t);
-  }
-  const primary = dune(cycle, .7);
-  const secondary = dune(nx * .67 + nz * .72 + mountainNoise(nx * .56, nz * .56, 67) * .35 + .31, .67);
-  const subsidiary = dune(cycle * 1.83 + mountainNoise(nx * .7, nz * .7, 81) * .32 + .65, .64);
-  const alongCrest = nx * .48 - nz * .9 + mountainNoise(nx * .48, nz * .48, 97) * .42;
-  const crestHeight = .42 + dune(alongCrest, .57) * .58;
-  const relief = .035 + primary * crestHeight * .78 + secondary * .2
-    + subsidiary * (.45 + primary * .55) * .1 * detail;
-  const apron = smoothstep(10, 120, envelope) * (1 - smoothstep(400, 900, envelope));
-  const foothills = dune(cycle * 1.4 + .5, .7) * 65 * apron * detail;
-  return smoothstep(1800, 6000, -z) * (envelope * relief + foothills);
+  return smoothstep(1800, 5400, -z) * elevation;
 }
 
 export function terrainHeight(x, z) {

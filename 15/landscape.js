@@ -1,4 +1,5 @@
 import { BundleGroup, InstancedMesh, Mesh, Object3D, PlaneGeometry, BufferGeometry, Float32BufferAttribute, Color } from 'three/webgpu';
+import { stitchTerrainEdge } from './terrain-stitch.js';
 import { createRockGeometry } from './rock-geometry.js';
 import { createIslandBedrock } from './island-bedrock.js';
 import { createDesertGrass } from './desert-grass.js';
@@ -297,39 +298,49 @@ export async function createLandscape(scene, materials, status) {
   const distanceTerrain = [];
   let innerX = 850, innerZ = 950;
   for (const outer of [1700, 3200, 6000, 11000, 19000, 31000, 50000, 80000, 125000, 200000]) {
-    const resolution = outer === 1700 ? [128, 20] : outer === 3200 ? [256, 32] : outer <= 11000 ? [512, 112] : outer <= 19000 ? [256, 40] : [192, 28];
-    const vertices = [], indices = [], [segments, rows] = resolution;
+    // Concentrate vertices in the northern ranges. Uniform resolution spent
+    // most of the memory on empty plains while leaving distant crests faceted.
+    // All four sides retain identical radial rows to meet without corner gaps.
+    const rows = outer === 1700 ? 20 : outer === 3200 ? 32 : outer <= 50000 ? 112 : 96;
+    const columns = outer === 1700 ? [128, 128, 128, 128] : outer === 3200 ? [256, 256, 256, 256]
+      : outer === 11000 || outer === 19000 ? [512, 128, 64, 128] : outer > 19000 ? [512, 64, 32, 64] : [512, 96, 64, 96];
+    const vertices = [], indices = [], sides = [];
     for (let side = 0; side < 4; side++) {
-      const start = vertices.length / 3;
+      const start = vertices.length / 3, segments = columns[side];
+      sides.push({ start, segments });
       for (let row = 0; row <= rows; row++) for (let col = 0; col <= segments; col++) {
         const t = row / rows, u = col / segments * 2 - 1;
         const rx = innerX + (outer - innerX) * t, rz = innerZ + (outer + 100 - innerZ) * t;
         const x = side === 0 ? u * rx : side === 1 ? rx : side === 2 ? -u * rx : -rx;
         const z = (side === 0 ? -rz : side === 1 ? u * rz : side === 2 ? rz : -u * rz) - 520;
-        let height = terrainHeight(x, z);
-        if (row === 0) {
-          // Follow the preceding mesh edge, including where the ring's
-          // sample count changes. Re-evaluating noise here opens cracks.
-          const previous = distanceTerrain.at(-1);
-          if (previous) {
-            const g = previous.userData.grid, pp = previous.geometry.attributes.position;
-            const f = col / segments * g.segments, j = Math.min(g.segments - 1, Math.floor(f));
-            const a = side * (g.rows + 1) * (g.segments + 1) + g.rows * (g.segments + 1) + j;
-            height = pp.getY(a) * (1 - (f - j)) + pp.getY(a + 1) * (f - j);
-          } else {
-            const f = col / segments * (side % 2 ? 470 : 420), j = Math.min((side % 2 ? 470 : 420) - 1, Math.floor(f));
-            const a = side === 0 ? j : side === 1 ? j * 421 + 420 : side === 2 ? 470 * 421 + 420 - j : (470 - j) * 421;
-            const b = a + (side === 0 ? 1 : side === 1 ? 421 : side === 2 ? -1 : -421);
-            height = p.getY(a) * (1 - (f - j)) + p.getY(b) * (f - j);
-          }
-          height -= .015;
-        }
+        const height = terrainHeight(x, z);
         vertices.push(x, height, z);
       }
-      for (let row = 0; row < rows; row++) for (let col = 0; col < segments; col++) {
+      for (let row = 1; row < rows; row++) for (let col = 0; col < segments; col++) {
         const a = start + row * (segments + 1) + col, b = a + segments + 1;
         indices.push(a, a + 1, b, a + 1, b + 1, b);
       }
+    }
+    // Use the preceding mesh's exact boundary vertices, then zipper them
+    // to this ring's first full row. Interpolation alone left T-junctions
+    // wherever the coarser edge skipped a peak on the finer edge.
+    const stitches = [];
+    const previous = distanceTerrain.at(-1);
+    for (let side = 0; side < 4; side++) {
+      const segments = columns[side];
+      const count = previous ? previous.userData.grid.sides[side].segments : side % 2 ? 470 : 420;
+      const inner = [], outerRow = [];
+      for (let col = 0; col <= count; col++) {
+        const g = previous?.userData.grid, pp = previous ? previous.geometry.attributes.position : p;
+        const index = previous ? g.sides[side].start + g.rows * (count + 1) + col
+          : side === 0 ? col : side === 1 ? col * 421 + 420 : side === 2 ? 470 * 421 + 420 - col : (470 - col) * 421;
+        inner.push(vertices.length / 3);
+        vertices.push(pp.getX(index), pp.getY(index), pp.getZ(index));
+      }
+      const start = sides[side].start + segments + 1;
+      for (let col = 0; col <= segments; col++) outerRow.push(start + col);
+      const stitch = stitchTerrainEdge(inner, outerRow);
+      indices.push(...stitch.triangles); stitches.push(stitch.bins);
     }
     const geometry = new BufferGeometry(); geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3)); geometry.setIndex(indices); geometry.computeVertexNormals();
     // Sample the heightfield's slope directly. Averaging the normals of long
@@ -337,8 +348,11 @@ export async function createLandscape(scene, materials, status) {
     const normals = geometry.attributes.normal, positions = geometry.attributes.position;
     for (let i = 0; i < positions.count; i++) {
       const x = positions.getX(i), z = positions.getZ(i);
-      if (z > -1800) continue;
-      const step = Math.max(8, Math.min(80, outer / 600));
+      if (z > -1800) {
+        if (normals.getY(i) === 0) normals.setXYZ(i, 0, 1, 0);
+        continue;
+      }
+      const step = 8; // Identical gradients on both sides of a stitched boundary.
       const dx = terrainHeight(x - step, z) - terrainHeight(x + step, z);
       const dz = terrainHeight(x, z - step) - terrainHeight(x, z + step);
       const length = Math.hypot(dx, step * 2, dz);
@@ -346,7 +360,7 @@ export async function createLandscape(scene, materials, status) {
     }
     geometry.userData.preserveSurface = true;
     const mesh = new Mesh(geometry, materials.sand); mesh.name = `Distant terrain / ${outer} m`; group.add(mesh); distanceTerrain.push(mesh);
-    mesh.userData.grid = { innerX, innerZ, outerX: outer, outerZ: outer + 100, segments, rows };
+    mesh.userData.grid = { innerX, innerZ, outerX: outer, outerZ: outer + 100, sides, rows, stitches };
     innerX = outer; innerZ = outer + 100;
   }
   group.needsUpdate = true;
@@ -379,9 +393,15 @@ export async function createLandscape(scene, materials, status) {
         const rx = g.innerX + (g.outerX - g.innerX) * t, rz = g.innerZ + (g.outerZ - g.innerZ) * t;
         const u = side === 0 ? x / rx : side === 1 ? zz / rz : side === 2 ? -x / rx : -zz / rz;
         if (Math.abs(u) > 1.000001) continue;
-        const row = Math.min(g.rows - 1, Math.floor(t * g.rows)), col = Math.min(g.segments - 1, Math.max(0, Math.floor((u + 1) * .5 * g.segments)));
-        const start = side * (g.rows + 1) * (g.segments + 1);
-        return cellHeight(mesh.geometry.attributes.position, start + row * (g.segments + 1) + col, g.segments + 1, x, z);
+        const { start, segments } = g.sides[side];
+        const row = Math.min(g.rows - 1, Math.floor(t * g.rows)), col = Math.min(segments - 1, Math.max(0, Math.floor((u + 1) * .5 * segments)));
+        if (row === 0) {
+          for (const [a, b, c] of g.stitches[side][col]) {
+            const hit = triangleHeight(mesh.geometry.attributes.position, a, b, c, x, z);
+            if (hit.inside) return hit.height;
+          }
+        }
+        return cellHeight(mesh.geometry.attributes.position, start + row * (segments + 1) + col, segments + 1, x, z);
       }
     }
     return terrainHeight(x, z);

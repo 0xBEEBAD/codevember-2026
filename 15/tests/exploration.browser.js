@@ -84,9 +84,13 @@ export async function checkExploration(app = window.mirage) {
     let farError = 0;
     for (const mesh of landscape.distanceTerrain) {
       const p = mesh.geometry.attributes.position;
-      for (let i = 120; i < p.count; i += 251) farError = Math.max(farError, Math.abs(landscape.heightAt(p.getX(i), p.getZ(i)) - p.getY(i)));
+      const used = [...new Set(mesh.geometry.index.array)];
+      for (let j = 120; j < used.length; j += 251) {
+        const i = used[j];
+        farError = Math.max(farError, Math.abs(landscape.heightAt(p.getX(i), p.getZ(i)) - p.getY(i)));
+      }
     }
-    // Ring edges follow the preceding mesh, with a 1.5 cm inset.
+    // Stitched ring edges reuse the preceding mesh boundary exactly.
     assert(farError <= .025, `Far terrain contact mismatch: ${farError}`);
     report.farTerrainError = farError;
     navigation.setView('Dunes'); settings.ssgi = false; settings.heat = 0;

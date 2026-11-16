@@ -4,6 +4,7 @@ import { createCloudShadows } from './cloud-shadows.js';
 import { SunLight } from 'three/addons/lights/SunLight.js';
 import { MirageSunLightShadow } from './vendor/MirageSunLightShadow.js';
 import { MirageSunLightNode } from './vendor/MirageSunLightNode.js';
+import { aerosolState, sunlightTransmission, RAYLEIGH, RAYLEIGH_HEIGHT, AEROSOL_HEIGHT } from './atmosphere-model.js';
 import { uniform, vec2, vec3, exp, mix, float, cubeTexture, pass, screenUV, isBackgroundDepth } from 'three/tsl';
 
 SunLight.registerNode(MirageSunLightNode);
@@ -12,8 +13,8 @@ export function createAtmosphere(scene, camera, renderer) {
   // One direction controls direct lighting, shadows and the visible solar disc.
   const direction = new Vector3(-.62, .56, .55).normalize();
   const sky = new SkyMesh(); sky.name = 'Desert sky and drifting clouds'; sky.scale.setScalar(12000);
-  sky.sunPosition.value.copy(direction); sky.turbidity.value = 4.8; sky.rayleigh.value = 1.8;
-  sky.mieCoefficient.value = .005; sky.mieDirectionalG.value = .82;
+  sky.sunPosition.value.copy(direction); sky.turbidity.value = 7.2; sky.rayleigh.value = 1.8;
+  sky.mieCoefficient.value = .008; sky.mieDirectionalG.value = .82;
   sky.cloudCoverage.value = .43; sky.cloudDensity.value = .6; sky.cloudElevation.value = .9;
   sky.cloudSpeed.value = .000006; sky.cloudScale.value = .00036;
   const cloudPhase = uniform(0);
@@ -66,7 +67,7 @@ export function createAtmosphere(scene, camera, renderer) {
   sun.shadow.autoUpdate = false; sun.shadow.needsUpdate = true;
   const shadowEye = new Vector3(Infinity, Infinity, Infinity), shadowRotation = new Quaternion(), shadowSun = new Vector3();
   scene.add(sun); sun.layers.enable(1);
-  const haze = uniform(.0003), rayleigh = uniform(1.8), eyePosition = uniform(camera.position);
+  const haze = uniform(.0003), rayleigh = uniform(1.8), aerosol = uniform(new Vector3()), eyePosition = uniform(camera.position);
   function opticalLength(start, end, distance, height) {
     const difference = end.sub(start);
     const integral = exp(start.div(-height)).sub(exp(end.div(-height))).mul(height).div(difference.abs().max(.001)).mul(difference.sign());
@@ -77,15 +78,17 @@ export function createAtmosphere(scene, camera, renderer) {
     const surface = isBackgroundDepth(depth).select(0, 1);
     const distance = view.length();
     const start = eye.y.abs(), end = world.y.max(0);
-    const molecular = opticalLength(start, end, distance, 8400).mul(rayleigh);
-    const aerosol = opticalLength(start, end, distance, 1200).mul(haze.mul(.2));
+    const molecular = opticalLength(start, end, distance, RAYLEIGH_HEIGHT).mul(rayleigh);
+    const airborne = aerosol.mul(opticalLength(start, end, distance, AEROSOL_HEIGHT));
+    // Saltating sand is confined near the ground, separately from the fine
+    // aerosols suspended throughout the lower atmosphere.
     const lowDust = opticalLength(start, end, distance, 12).mul(haze.mul(.8));
-    const extinction = vec3(.0000058045, .000013558, .0000331).mul(molecular).add(aerosol).add(lowDust);
+    const extinction = vec3(...RAYLEIGH).mul(molecular).add(airborne).add(lowDust);
     const transmission = extinction.mul(surface).negate().exp();
     const air = cubeTexture(skyCube.texture, world.sub(eye).normalize()).rgb;
     return color.mul(transmission).add(air.mul(transmission.oneMinus()));
   }
-  return { sky, skyPass, sun, skyCube, environmentCube, cloudShadows, cloudPhase, haze, direction: sun.position, horizonColor,
+  return { sky, skyPass, sun, skyCube, environmentCube, cloudShadows, cloudPhase, haze, aerosol, direction: sun.position, horizonColor,
     applyHaze,
     update(settings, time = 0) {
       const cloudTime = time + cloudPhase.value;
@@ -97,17 +100,16 @@ export function createAtmosphere(scene, camera, renderer) {
       camera.getWorldDirection(horizonDirection); horizonDirection.y = 0; horizonDirection.normalize();
       horizonPoint.copy(camera.position).addScaledVector(horizonDirection, 10000).project(camera);
       horizon.value = Math.max(.01, Math.min(.99, .5 - horizonPoint.y * .5));
-      sky.turbidity.value = settings.turbidity; sky.rayleigh.value = settings.rayleigh; sky.mieCoefficient.value = settings.mie;
+      const air = aerosolState(settings);
+      sky.turbidity.value = air.turbidity; sky.rayleigh.value = settings.rayleigh; sky.mieCoefficient.value = settings.mie;
+      aerosol.value.fromArray(air.extinction);
       cloudDensity.value = settings.cloudDensity; sky.cloudElevation.value = settings.cloudElevation; sky.cloudScale.value = settings.cloudScale;
       haze.value = settings.haze; rayleigh.value = settings.rayleigh; cloudCoverage.value = settings.clouds;
       sun.intensity = settings.sun; scene.environmentIntensity = settings.ambient; skyEnergy.value = settings.sun * (.1 / 4.3);
-      // Direct sunlight loses blue energy over the same Rayleigh optical path
-      // used by SkyMesh, instead of carrying an unrelated orange RGB tint.
-      const elevation = Math.max(.01, sky.sunPosition.value.y);
-      const airMass = 1 / (elevation + .02739 / (elevation * (elevation * 26 + 18.6) + 1));
-      const opticalPath = 8400 * airMass * settings.rayleigh;
-      sun.color.setRGB(1, Math.exp(-(.000013558 - .0000058045) * opticalPath), Math.exp(-(.0000331 - .0000058045) * opticalPath));
-      const key = `${sky.sunPosition.value.toArray()}/${settings.turbidity}/${settings.rayleigh}/${settings.mie}/${settings.sun}`;
+      // Aerosols scatter light into the halo and out of the direct beam.
+      // Do not brighten the sun independently as the air gets dustier.
+      sun.color.fromArray(sunlightTransmission(sky.sunPosition.value.y, settings.rayleigh, air.extinction));
+      const key = `${sky.sunPosition.value.toArray()}/${air.turbidity}/${settings.rayleigh}/${settings.mie}/${settings.sun}`;
       if (key !== skyKey) {
         const tone = renderer.toneMapping, space = renderer.outputColorSpace;
         try { renderer.toneMapping = NoToneMapping; renderer.outputColorSpace = LinearSRGBColorSpace; skyCamera.update(renderer, clearScene); skyKey = key; }
