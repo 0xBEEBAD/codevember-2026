@@ -3,10 +3,12 @@ import { createRoverModel } from './rover-model.js';
 import { createRoverPhysics } from './rover-physics.js';
 import { createWheelTracks } from './wheel-tracks.js';
 import { createRoverInput } from './rover-input.js';
+import { createRoverShadowTracker } from './rover-shadow.js';
 
 export async function createRover(scene, canvas, landscape, architecture, changed) {
   const { obstacles, heightAt } = landscape;
   const physics = await createRoverPhysics(heightAt, obstacles, architecture.colliders);
+  const shadow = createRoverShadowTracker(physics);
   // Opening composition: parked on the dune, facing the sanctuary from the
   // user's chosen driving view. Settle the suspension before the first frame.
   const spawn = physics.capture(); spawn.position = [-8.30445671, 1.17500556, 141.80295944];
@@ -44,7 +46,7 @@ export async function createRover(scene, canvas, landscape, architecture, change
     restore(state) { physics.restore(state); input.clear(); tracks.breakPaths(); speed = physics.speed; moving = speed > .015; shadowDirty = true; pose(); },
     get active() { return active; }, set active(value) { active = value; input.clear(); tracks.breakPaths(); moving = false; if (value) canvas.focus({ preventScroll: true }); },
     get moving() { return moving; }, get speed() { return speed; }, get yaw() { return yaw; },
-    get shadowDirty() { return shadowDirty; }, markShadowRendered() { shadowDirty = false; },
+    get shadowDirty() { return shadowDirty || shadow.dirty; }, markShadowRendered() { shadowDirty = false; shadow.markRendered(); },
     instances: model.instances,
     dispose() { input.dispose(); physics.dispose(); tracks.dispose(); scene.remove(group); model.dispose(); }
   };

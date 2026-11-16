@@ -283,7 +283,9 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
   const floor = (terrainHeight(origin[0], origin[2] + stairStart * stairScale) - origin[1]) / stairScale;
   const stairs = [], flights = [], ramps = [];
   let stairY = floor, stairZ = stairStart;
-  const count = 120, rise = (-1.35 - floor) / count;
+  // Meet the upper foundation at its actual walking height. Ending a metre
+  // lower left a lip that hid the tires and caught the rover at the summit.
+  const count = 120, rise = (-.35 - floor) / count;
   function stairPost(x, y, z, grounded = false) {
     if (grounded) {
       // Entrance posts sit beside the first riser, above the basin floor.
@@ -349,7 +351,7 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
     stairZ -= .70;
   }
   block(0, floor - .10, stairStart + 3, 27, .4, 7);
-  block(0, -1.55, (stairZ + 36) / 2, 24, .8, stairZ - 36 + 1);
+  block(0, -.75, (stairZ + 36) / 2, 24, .8, stairZ - 36 + 1);
   const distantStairs = mergeGeometries(ramps); ramps.forEach(g => g.dispose());
   distantStairs.userData.preserveSurface = true;
   const stairFar = geometries.length; geometries.push(distantStairs);

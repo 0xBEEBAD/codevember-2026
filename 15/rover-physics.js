@@ -42,7 +42,12 @@ export async function createRoverPhysics(heightAt, obstacles = [], architecture 
   bodyDef.linearDamping = .12; bodyDef.angularDamping = 2.8; bodyDef.enableSleep = false;
   const body = b3.b3CreateBody(world, bodyDef), shape = b3.b3DefaultShapeDef();
   shape.density = 330; shape.baseMaterial.friction = .5; shape.filter.categoryBits = 2n;
-  b3.b3CreateBoxShape(body, shape, .43, .23, .84);
+  // The rear shell extends 25 cm beyond the original chassis. Keep the
+  // collision hull and its mass distribution aligned with that silhouette.
+  const chassisVertices = [];
+  for (const x of [-.43, .43]) for (const y of [-.23, .23]) for (const z of [-.84, 1.09]) chassisVertices.push(x, y, z);
+  const chassisHull = b3.b3CreateHull(chassisVertices);
+  b3.b3CreateHullShape(body, shape, chassisHull); b3.b3DestroyHull(chassisHull);
   const mass = b3.b3Body_GetMass(body), spring = mass * 9.81 / (4 * .14), damping = 2 * Math.sqrt(spring * mass / 4) * .72;
   const query = b3.b3DefaultQueryFilter(); query.maskBits = 1n;
   const wheels = [-1, 1].flatMap(side => [-1, 1].map(end => ({ side, end, length: .76, angle: 0, spin: 0, contact: false, point: [0, 0, 0], normal: [0, 1, 0], sand: false })));
@@ -150,9 +155,9 @@ export async function createRoverPhysics(heightAt, obstacles = [], architecture 
   function contacts(throttle, boost, apply) {
     const up = rotate([0, 1, 0], rotation), down = scale(up, -1), localPosition = sub(position, origin);
     for (const wheel of wheels) {
-      const anchor = add(localPosition, rotate([wheel.side * .93, .10, wheel.end * .92], rotation));
+      const anchor = add(localPosition, rotate([wheel.side, .10, wheel.end * .92], rotation));
       // Ackermann front steering; rear tires keep their fixed rolling axis.
-      wheel.angle = wheel.end < 0 ? Math.atan2(1.84 * Math.tan(steering), 1.84 + wheel.side * .93 * Math.tan(steering)) : 0;
+      wheel.angle = wheel.end < 0 ? Math.atan2(1.84 * Math.tan(steering), 1.84 + wheel.side * Math.tan(steering)) : 0;
       let hit = b3.b3World_CastRayClosest(world, anchor, scale(down, TRAVEL + RADIUS), query);
       let length = hit.fraction * (TRAVEL + RADIUS) - RADIUS;
       const nearStone = contactBounds.some(o => Math.abs(anchor[0] + origin[0] - o.x) < o.rx + 1.4 && Math.abs(anchor[2] + origin[2] - o.z) < o.rz + 1.4);

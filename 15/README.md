@@ -54,6 +54,8 @@ The scene has 8,465 rock instances, 8,859 masonry instances and roughly 181 mill
 
 Box3D drives the rigid chassis with four independently suspended tires, steering forces, reverse and braking. A moving collision patch uses terrain triangles, shared procedural rock collision meshes and nearby masonry. Coordinates rebase locally for long drives. Tire sweeps climb small stones; a camera sphere sweep protects the eased chase camera from real obstacles without snapping to oversized rock bounds.
 
+Each leg has two main pieces: an outward shoulder and a shin aligned with the inboard steering plane. The shin meets the wheel hub through the tire's central opening, without an exposed horizontal connector. The chassis has a longer rounded rear shell with a matching collision hull. Shadow invalidation compares the current chassis and wheel pose with the last rendered pose, so slow downhill creep and suspension settling cannot leave a cached shadow behind.
+
 Sand contacts stamp subtle tread impressions into a bounded ring of 8,192 instances. Tracks and wheel spray follow each tire's steering and travel direction, and stop on stone or unsupported wheels. The camera keeps its follow radius through turns and continues easing after input ends. Gentle idle sway and speed-dependent vibration affect only its final orientation, leaving the chase distance and collision sweep stable. Camera drift and reduced-motion settings disable the sway.
 
 ## Source map
@@ -64,7 +66,7 @@ Sand contacts stamp subtle tread impressions into a bounded ring of 8,192 instan
 | `landscape.js`, `island-bedrock.js`, `scene-details.js`, `desert-grass.js` | Layout, rock clusters, foundations, ruins and grass |
 | `architecture.js`, `sanctuary-light.js` | Sanctuary, stairs, masonry colliders and projected seal |
 | `materials.js` | Generated textures and material shading |
-| `rover.js`, `rover-input.js`, `rover-model.js`, `rover-physics.js`, `wheel-tracks.js` | Vehicle, keyboard/touch input, physics and tracks |
+| `rover.js`, `rover-input.js`, `rover-model.js`, `rover-physics.js`, `rover-shadow.js`, `wheel-tracks.js` | Vehicle, keyboard/touch input, physics, shadow invalidation and tracks |
 | `atmosphere.js`, `atmosphere-model.js`, `cloud-shadows.js`, `daylight.js` | Sky, IBL, sunlight, haze and time presets |
 | `indirect-lighting.js`, `mirage-reflector.js`, `post-processing.js`, `dust.js` | GI, reflections, heat, particles and final composition |
 | `mirage-pipeline.js`, `vendor/` | Local three.js rendering extensions |
@@ -83,6 +85,8 @@ CPU tests cover geometry, curvature, joystick response, vehicle dynamics, terrai
 (await import('./tests/rover-input.browser.js')).checkRoverInput();
 (await import('./tests/camera.browser.js')).checkCameraEasing();
 (await import('./tests/camera.browser.js')).checkCameraMotion();
+(await import('./tests/rover-clearance.browser.js')).checkRoverClearance();
+await (await import('./tests/rover-shadow.browser.js')).checkSlowRoverShadow();
 (await import('./tests/terrain.browser.js')).checkTerrain();
 await (await import('./tests/camera.browser.js')).checkRubbleCamera();
 await (await import('./tests/rendering.browser.js')).checkRendering();
@@ -96,6 +100,14 @@ Additional browser diagnostics in `tests/` cover rock topology/contact, sanctuar
 For deterministic inspection, set `window.mirage.manual = true`, call `advance(dt)`, wait for an animation frame, then call `render()`. Restore `manual = false` to resume. `inspect()` reports scene totals. Changes inside static groups require `group.needsUpdate = true`; shadow geometry also requires `atmosphere.sun.shadow.needsUpdate = true`.
 
 Local making-of screenshots and their camera/settings metadata are retained in `exports/making-of/`, with a contact sheet at `/exports/making-of/`. Exports are not part of the published experiment.
+
+## Capture tools
+
+`scripts/capture-sequence.js` contains the 60-second, 30 fps cinematic shot list. It includes native chase views, rover tracking, rock orbits, wheel details, daylight transitions and the sanctuary ascent. `scripts/capture-video.js` advances the real vehicle physics at a fixed timestep and renders at 1536 × 1536 before downsampling to 1024 × 1024. The capture session temporarily takes over input and camera controls, then restores the experiment. `preview(shotIndex, fraction)` makes still rehearsals without recording.
+
+Start a receiver with `python3 scripts/capture-server.py exports/mirage.mp4 --previews`. In a 1024 × 1024 browser viewport at DPR 1, call `await (await import('./scripts/capture-video.js')).captureVideo()`. PNG frames stream directly to FFmpeg; only selected preview frames are retained. The receiver verifies decoded frame count, dimensions and duration before completing the silent H.264 MP4. Use a new output filename and receiver for another recording. `captureProgress.cancel()` cancels encoding while leaving both HTTP servers running.
+
+`scripts/capture-gallery.js` uses the same scene for an interface-free 800 × 800 WebP, rendered at 1600 × 1600. Review its saved preview before copying it to the gallery's `files/15.webp`.
 
 ## Credits
 

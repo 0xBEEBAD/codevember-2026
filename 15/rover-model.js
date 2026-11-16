@@ -1,7 +1,7 @@
 import {
   Group, Mesh, MeshStandardNodeMaterial, CapsuleGeometry, CylinderGeometry,
   LatheGeometry, PlaneGeometry, Shape, ExtrudeGeometry, CanvasTexture,
-  SRGBColorSpace, Vector2, Vector3, Object3D, FrontSide
+  SRGBColorSpace, Vector2, Vector3, Matrix4, Object3D, FrontSide
 } from 'three/webgpu';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -33,6 +33,9 @@ export function createRoverModel() {
   const axle = new CylinderGeometry(1, 1, 1, 32); axle.rotateZ(Math.PI / 2);
   const bolt = new CylinderGeometry(1, 1, 1, 6); bolt.rotateZ(Math.PI / 2);
   const cylinder = new CylinderGeometry(1, 1, 1, 16);
+  const pivotBushing = new LatheGeometry([
+    [.019, -.0475], [.055, -.0475], [.055, .0475], [.019, .0475], [.019, -.0475]
+  ].map(([r, x]) => new Vector2(r, x)), 24); pivotBushing.rotateZ(Math.PI / 2);
   const tire = new LatheGeometry([
     [.24, -.12], [.29, -.14], [.33, -.135], [.355, -.105],
     [.365, -.06], [.365, .06], [.355, .105], [.33, .135],
@@ -47,7 +50,7 @@ export function createRoverModel() {
   const upperShape = armGeometry([[-.07, -.48], [.07, -.48], [.115, -.30], [.12, .32], [.07, .48], [-.07, .48], [-.12, .29], [-.10, -.25]], .17);
   const upperCover = armGeometry([[-.055, -.38], [.055, -.38], [.088, -.24], [.09, .27], [.05, .38], [-.05, .38], [-.085, .23], [-.075, -.23]], .018);
   const lowerShape = armGeometry([[-.07, -.48], [.07, -.48], [.11, -.27], [.075, .32], [.05, .48], [-.05, .48], [-.11, .27], [-.10, -.23]], .125);
-  const geometries = [round, bodyCore, bodyShell, treadBlock, axle, bolt, cylinder, tire, upperShape, upperCover, lowerShape];
+  const geometries = [round, bodyCore, bodyShell, treadBlock, axle, bolt, cylinder, pivotBushing, tire, upperShape, upperCover, lowerShape];
   const textures = [], meshes = [], assemblies = new Map(), dummy = new Object3D();
 
   // Merge rigid pieces per material and articulation, rather than keeping
@@ -67,16 +70,17 @@ export function createRoverModel() {
   }
 
   // Recessed battery chassis, separate ceramic armor and metal skid plate.
-  piece(bodyCore, materials.frame, body, 0, 1.13, 0, .82, .47, .87);
-  rect(materials.trim, body, 0, .92, .02, .68, .075, 1.39);
-  piece(bodyShell, materials.shell, body, 0, 1.30, -.08, 1, 1, 1);
-  rect(materials.rubber, body, 0, 1.485, .14, .65, .022, .82);
-  rect(materials.frame, body, 0, 1.501, .14, .60, .025, .76);
+  const rearExtension = .25;
+  piece(bodyCore, materials.frame, body, 0, 1.13, rearExtension / 2, .82, .47, .87 + rearExtension / 2);
+  rect(materials.trim, body, 0, .92, .02 + rearExtension / 2, .68, .075, 1.39 + rearExtension);
+  piece(bodyShell, materials.shell, body, 0, 1.30, -.08 + rearExtension / 2, 1, 1, 1 + rearExtension / 1.55);
+  rect(materials.rubber, body, 0, 1.485, .14 + rearExtension / 2, .65, .022, .82 + rearExtension);
+  rect(materials.frame, body, 0, 1.501, .14 + rearExtension / 2, .60, .025, .76 + rearExtension);
   // Raised ribs keep the service lid legible from the chase camera.
-  for (let i = 0; i < 4; i++) rect(materials.trim, body, 0, 1.518, -.10 + i * .15, .46, .012, .018);
+  for (let i = 0; i < 6; i++) rect(materials.trim, body, 0, 1.518, -.10 + i * .15, .46, .012, .018);
   for (const side of [-1, 1]) {
-    rect(materials.frame, body, side * .34, 1.49, .13, .047, .06, 1.03);
-    rect(materials.rubber, body, side * .443, 1.275, -.08, .024, .26, 1.07);
+    rect(materials.frame, body, side * .34, 1.49, .13 + rearExtension / 2, .047, .06, 1.03 + rearExtension);
+    rect(materials.rubber, body, side * .443, 1.275, -.08 + rearExtension / 2, .024, .26, 1.07 + rearExtension);
     rect(materials.shell, body, side * .465, 1.29, -.26, .027, .22, .63);
     rect(materials.trim, body, side * .469, 1.29, .32, .03, .22, .36);
     for (let i = 0; i < 7; i++) rect(materials.frame, body, side * .488, 1.29, .19 + i * .042, .012, .13, .018);
@@ -94,16 +98,16 @@ export function createRoverModel() {
     rect(materials.frame, body, side * .35, 1.1, -.80, .10, .18, .29, -.15);
     disc(materials.frame, body, side * .265, 1.31, -.84, .065, .078, Math.PI / 2);
     disc(materials.lamp, body, side * .265, 1.31, -.883, .012, .054, Math.PI / 2);
-    rect(materials.rear, body, side * .34, 1.32, .818, .066, .036, .015);
+    rect(materials.rear, body, side * .34, 1.32, .818 + rearExtension, .066, .036, .015);
   }
   // Rear access hatch and cooling grilles make the driving view feel finished.
-  rect(materials.rubber, body, 0, 1.19, .81, .64, .29, .035);
-  rect(materials.shell, body, 0, 1.18, .837, .57, .23, .03);
-  rect(materials.frame, body, 0, 1.03, .85, .72, .08, .11);
-  for (let i = 0; i < 8; i++) rect(materials.frame, body, -.23 + i * .066, 1.36, .80, .038, .06, .018);
-  for (const x of [-.24, .24]) for (const y of [1.10, 1.25]) screw(body, x, y, .859, .012, Math.PI / 2);
-  rect(materials.frame, body, .16, 1.12, .863, .115, .022, .018);
-  for (const x of [-.25, .25]) rect(materials.metal, body, x, .98, .876, .075, .025, .025);
+  rect(materials.rubber, body, 0, 1.19, .81 + rearExtension, .64, .29, .035);
+  rect(materials.shell, body, 0, 1.18, .837 + rearExtension, .57, .23, .03);
+  rect(materials.frame, body, 0, 1.03, .85 + rearExtension, .72, .08, .11);
+  for (let i = 0; i < 8; i++) rect(materials.frame, body, -.23 + i * .066, 1.36, .80 + rearExtension, .038, .06, .018);
+  for (const x of [-.24, .24]) for (const y of [1.10, 1.25]) screw(body, x, y, .859 + rearExtension, .012, Math.PI / 2);
+  rect(materials.frame, body, .16, 1.12, .863 + rearExtension, .115, .022, .018);
+  for (const x of [-.25, .25]) rect(materials.metal, body, x, .98, .876 + rearExtension, .075, .025, .025);
 
   // Integrated optics keep a low, rounded silhouette, like the reference.
   rect(materials.shell, body, 0, 1.42, -.82, .35, .15, .21);
@@ -113,7 +117,7 @@ export function createRoverModel() {
     disc(materials.lens, body, side * .10, 1.42, -.964, .012, .029, Math.PI / 2);
   }
   rect(materials.lamp, body, 0, 1.455, -.947, .026, .009, .008);
-  rect(materials.rubber, body, -.27, 1.52, .53, .065, .07, .12);
+  rect(materials.rubber, body, -.27, 1.52, .53 + rearExtension, .065, .07, .12);
 
   // A small generated stencil is the only bitmap on the rover.
   const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 256;
@@ -128,7 +132,7 @@ export function createRoverModel() {
   function label(parent, x, y, z, w, h, ry = 0) {
     const m = new Mesh(decal, materials.stencil); m.position.set(x, y, z); m.scale.set(w, h, 1); m.rotation.y = ry; parent.add(m); meshes.push(m);
   }
-  label(body, -.035, 1.19, .856, .42, .105);
+  label(body, -.035, 1.19, .856 + rearExtension, .42, .105);
   for (const side of [-1, 1]) label(body, side * .481, 1.30, -.26, .49, .1225, side * Math.PI / 2);
 
   const legs = [];
@@ -138,7 +142,15 @@ export function createRoverModel() {
     piece(upperCover, materials.shell, upper, side * .10, 0, 0, 1, 1, 1);
     rect(materials.trim, upper, side * .116, -.03, -.002, .011, .34, .035);
     for (const y of [-.29, .29]) screw(upper, side * .126, y, 0, .018);
-    piece(lowerShape, materials.frame, lower, 0, 0, 0, 1, 1, 1);
+    // The shin itself meets the hub. A short, smoothly flared ankle stays
+    // inside the tire's central opening, avoiding a third horizontal link.
+    const ankleShape = lowerShape.clone(), anklePositions = ankleShape.attributes.position;
+    for (let i = 0; i < anklePositions.count; i++) {
+      const t = Math.max(0, Math.min(1, (-.35 - anklePositions.getY(i)) / .13));
+      anklePositions.setX(i, anklePositions.getX(i) + side * .14 * t * t * (3 - 2 * t));
+    }
+    ankleShape.computeVertexNormals(); geometries.push(ankleShape);
+    piece(ankleShape, materials.frame, lower, 0, 0, 0, 1, 1, 1);
     rect(materials.trim, lower, side * .071, -.03, .014, .015, .46, .105);
     for (const y of [-.19, .22]) screw(lower, side * .087, y, .014, .017);
     disc(materials.frame, knee, 0, 0, 0, .24, .145);
@@ -150,8 +162,14 @@ export function createRoverModel() {
     }
     const barrel = new Mesh(cylinder, materials.frame), piston = new Mesh(cylinder, materials.metal);
     for (const m of [barrel, piston]) { m.castShadow = m.receiveShadow = true; group.add(m); meshes.push(m); }
+    const shockMount = new Group(); group.add(shockMount);
+    // A through-pin in an open bushing, with a proud hex head. Keep the
+    // mating surfaces separated and the small joint intact through LODs.
+    shockMount.userData.preserveSurface = true;
+    piece(pivotBushing, materials.frame, shockMount, 0, 0, 0, 1, 1, 1);
+    disc(materials.metal, shockMount, 0, 0, 0, .11, .0175);
+    piece(bolt, materials.metal, shockMount, -side * .058, 0, 0, .020, .024, .024);
     const wheel = new Group(), spin = new Group(); spin.userData.contactWheel = true; wheel.add(spin); group.add(wheel);
-    disc(materials.frame, wheel, -side * .15, 0, 0, .12, .105);
     piece(tire, materials.rubber, spin, 0, 0, 0, 1, 1, 1);
     disc(materials.frame, spin, 0, 0, 0, .19, .255);
     disc(materials.trim, spin, side * .107, 0, 0, .024, .238);
@@ -171,16 +189,18 @@ export function createRoverModel() {
       const a = i / 48 * Math.PI * 2;
       piece(treadBlock, materials.tread, spin, half * .062, Math.cos(a) * .373, Math.sin(a) * .373, .133, .022, .032, a, half * .36);
     }
-    legs.push({ side, end, upper, lower, knee, wheel, spin, barrel, piston, hip: new Vector3(), bend: new Vector3(), foot: new Vector3(), shockTop: new Vector3(), shockEnd: new Vector3() });
+    legs.push({ side, end, upper, lower, knee, wheel, spin, barrel, piston, shockMount, hip: new Vector3(), bend: new Vector3(), foot: new Vector3(), knuckle: new Vector3(), shockTop: new Vector3(), shockEnd: new Vector3() });
   }
   for (const [parent, buckets] of assemblies) for (const [mat, pieces] of buckets) {
     const g = mergeGeometries(pieces); pieces.forEach(p => p.dispose()); geometries.push(g);
+    if (parent.userData.preserveSurface) g.userData.preserveSurface = true;
     if (parent.userData.contactWheel && (mat === materials.rubber || mat === materials.tread)) g.userData.preserveSurface = true;
     const mesh = new Mesh(g, mat); mesh.castShadow = mesh.receiveShadow = true; parent.add(mesh); meshes.push(mesh);
   }
   assemblies.clear();
   for (const geometry of geometries) geometry.userData.meshletFamily = 'rover';
   const direction = new Vector3(), up = new Vector3(0, 1, 0), shockJoin = new Vector3();
+  const axleAxis = new Vector3(), depthAxis = new Vector3(), legBasis = new Matrix4();
   function link(object, a, b, width = 1, depth = width) {
     direction.subVectors(b, a); object.position.copy(a).add(b).multiplyScalar(.5);
     object.scale.set(width, direction.length(), depth); object.quaternion.setFromUnitVectors(up, direction.normalize());
@@ -190,14 +210,29 @@ export function createRoverModel() {
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i], state = physics.wheels[i];
       leg.hip.set(leg.side * .50, .02, leg.end * .57);
-      leg.foot.set(leg.side * .93, .10 - state.length, leg.end * .92);
-      leg.bend.set(leg.side * .78, -.28 + (leg.foot.y + .66) * .35, leg.end * .35);
+      leg.foot.set(leg.side, .10 - state.length, leg.end * .92);
+      leg.knuckle.copy(leg.foot);
+      const cs = Math.cos(state.angle), sn = Math.sin(state.angle);
+      leg.knuckle.x -= leg.side * .27 * cs;
+      leg.knuckle.z += leg.side * .27 * sn;
+      // Two links: the shoulder splays outward, then the shin descends in
+      // the inboard wheel plane. Steering rotates that plane, preserving
+      // tire clearance without an extra link or a collapsed resting stance.
+      const dy = -.28 + (leg.foot.y + .66) * .35 - leg.foot.y, dz = -leg.end * .57;
+      leg.bend.set(-leg.side * .27 * cs + dz * sn, dy, leg.side * .27 * sn + dz * cs).add(leg.foot);
       // Point each link's local +Y toward the body so its outside armor
       // remains outward as the suspension compresses and extends.
-      link(leg.upper, leg.bend, leg.hip); link(leg.lower, leg.foot, leg.bend);
-      leg.knee.position.copy(leg.bend);
+      link(leg.upper, leg.bend, leg.hip, 1, .85);
+      link(leg.lower, leg.knuckle, leg.bend);
+      axleAxis.set(cs, 0, -sn); depthAxis.crossVectors(axleAxis, direction).normalize();
+      legBasis.makeBasis(axleAxis, direction, depthAxis); leg.lower.quaternion.setFromRotationMatrix(legBasis);
+      leg.knee.position.copy(leg.bend); leg.knee.rotation.y = state.angle;
       leg.shockTop.copy(leg.hip); leg.shockTop.x -= leg.side * .12; leg.shockTop.z += leg.end * .08;
-      leg.shockEnd.lerpVectors(leg.bend, leg.foot, .6); leg.shockEnd.x -= leg.side * .10;
+      // Transform a real mounting point on the shin. Offsetting in chassis X
+      // left the piston floating beside the arm when the wheel steered.
+      leg.lower.updateMatrix();
+      leg.shockEnd.set(-leg.side * .085, -.10, 0).applyMatrix4(leg.lower.matrix);
+      leg.shockMount.position.copy(leg.shockEnd); leg.shockMount.quaternion.copy(leg.lower.quaternion);
       shockJoin.lerpVectors(leg.shockTop, leg.shockEnd, .58);
       link(leg.barrel, leg.shockTop, shockJoin, .036); link(leg.piston, shockJoin, leg.shockEnd, .016);
       leg.wheel.position.copy(leg.foot); leg.wheel.rotation.y = state.angle; leg.spin.rotation.x = state.spin;
