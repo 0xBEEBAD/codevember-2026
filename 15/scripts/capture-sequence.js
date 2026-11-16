@@ -26,7 +26,7 @@ export const shots = [
   { name: 'The ascent', duration: 6, start: [-12, -219], goal: [-12, -340], throttle: 1,
     orbit: [-.7, -.95], radius: [26, 31], height: [12, 14], aim: [4, 4], stairs: true },
   { name: 'Above the dunes', duration: 6, start: [-12, -285], goal: [-12, -345], throttle: .65,
-    orbit: [2, 2.35], radius: [24, 27], height: [10, 11], aim: [1.5, 2], stairs: true },
+    orbit: [-1.55, -1.35], radius: [20, 23], height: [8.5, 10], aim: [1.5, 2], stairs: true },
   { name: 'The summit', duration: 6, start: [-12, -317], goal: [-12, -328], throttle: .65,
     orbit: [2.5, 3.35], radius: [12, 15], height: [4, 5], aim: [1.4, 2], stairs: true, stop: true, terraceCamera: true }
 ];

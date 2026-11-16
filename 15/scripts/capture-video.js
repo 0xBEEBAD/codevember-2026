@@ -12,6 +12,7 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
   const saved = { settings: { ...settings }, manual: app.manual, rover: rover.capture(),
     eye: camera.position.clone(), rotation: camera.quaternion.clone(), fov: camera.fov,
     update: navigation.update, physicsUpdate: rover.physics.update, controls: navigation.controls.enabled,
+    projector: app.architecture.projection.light.visible,
     ui: document.body.classList.contains('ui-hidden') };
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = SIZE;
   const ctx = canvas.getContext('2d', { alpha: false }); ctx.imageSmoothingQuality = 'high';
@@ -22,6 +23,9 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
   app.manual = true; settings.paused = false; settings.drift = false;
   settings.resolution = renderSize / SIZE; app.resize(); camera.fov = 52; camera.updateProjectionMatrix();
   navigation.controls.enabled = false; document.body.classList.add('ui-hidden');
+  // Leave the doorway beacon visible, but save its projected seal for the
+  // playable experiment. Restore it even if a capture is cancelled.
+  app.architecture.projection.light.visible = false;
   let drive = { throttle: 0, turn: 0 }, current = null, local = 0, next = 0, waypoint = 0;
   let smoothPosition = new Vector3(), smoothYaw = 0;
   const events = [];
@@ -64,13 +68,13 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
     camera.position.set(Math.sin(angle) * radius, height, Math.cos(angle) * radius).add(smoothPosition);
     // Stay in front of the threshold: the projected seal is behind this
     // camera, rather than a foreground spoiler during the terrace reveal.
-    if (current.stairs) camera.position.z = Math.max(camera.position.z, -332);
+    if (current.stairs) camera.position.z = Math.max(camera.position.z, -325);
     if (current.terraceCamera) {
-      camera.position.set(mix(-4, -8, t), mix(53.2, 50.5, t), mix(-330, -331.7, t));
+      camera.position.set(mix(-6, -8, t), smoothPosition.y + mix(1.15, 1, t), smoothPosition.z - 4.5);
     }
     // Cinematic crane paths remain above the actual terrain, without the
     // gameplay boom shortening when a distant outcrop crosses the sightline.
-    camera.position.y = Math.max(camera.position.y, app.landscape.heightAt(camera.position.x, camera.position.z) + (current.lowCamera ? .45 : 1.8));
+    camera.position.y = Math.max(camera.position.y, ground(camera.position.x, camera.position.z, current.stairs) + (current.lowCamera ? .45 : current.stairs ? 2 : 1.8));
     camera.lookAt(smoothPosition.x, smoothPosition.y + mix(...current.aim, t), smoothPosition.z);
     camera.updateMatrixWorld();
   }
@@ -133,6 +137,7 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
     },
     async restore() {
       input.abort(); navigation.update = saved.update; rover.physics.update = saved.physicsUpdate;
+      app.architecture.projection.light.visible = saved.projector;
       rover.restore(saved.rover); rover.tracks.clear(); rover.tracks.seedApproach(rover.physics.wheels, rover.yaw); app.dust.clear();
       app.daylight.select(saved.settings.timeOfDay); app.daylight.update(2);
       Object.assign(settings, saved.settings); navigation.controls.enabled = saved.controls;
