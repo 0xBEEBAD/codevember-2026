@@ -43,6 +43,13 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
     const [gx, gz] = current.route?.[waypoint] || current.goal, dx = gx - rover.position.x, dz = gz - rover.position.z;
     const desired = Math.atan2(-dx, -dz), delta = Math.atan2(Math.sin(desired - rover.yaw), Math.cos(desired - rover.yaw));
     drive.turn = Math.max(-1, Math.min(1, delta * 2.5));
+    // Brief, balanced steering inputs suggest a driver's small adjustments
+    // without weaving between waypoints or changing the overall driving line.
+    for (const [at, amount] of current.corrections || []) {
+      const u = (local / FPS - at) / .55;
+      if (u > 0 && u < 1) drive.turn += Math.sin(u * Math.PI * 2) * amount;
+    }
+    drive.turn = Math.max(-1, Math.min(1, drive.turn));
     drive.throttle = current.throttle;
     if (current.stop) drive.throttle *= Math.min(1, Math.max(0, Math.hypot(dx, dz) - 1) / 8);
     if (current.stop && rover.position.z > -327) drive.throttle = Math.max(.55, drive.throttle);
