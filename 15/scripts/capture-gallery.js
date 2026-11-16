@@ -1,6 +1,6 @@
 import { createCaptureSession } from './capture-video.js';
 
-export async function captureGallery({ receiver = 'http://127.0.0.1:8026', name = 'gallery-latest' } = {}) {
+export async function captureGallery({ receiver = 'http://127.0.0.1:8026', name = 'preview' } = {}) {
   const session = createCaptureSession({ renderSize: 1600, overlays: false }), app = session.app;
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 800;
   const context = canvas.getContext('2d', { alpha: false }); context.imageSmoothingQuality = 'high';

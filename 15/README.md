@@ -109,7 +109,7 @@ Local making-of screenshots and their camera/settings metadata are retained in `
 
 Start a receiver with `python3 scripts/capture-server.py exports/mirage.mp4 --previews`. In a 1024 × 1024 browser viewport at DPR 1, call `await (await import('./scripts/capture-video.js')).captureVideo()`. PNG frames stream directly to FFmpeg; only selected preview frames are retained. The receiver verifies decoded frame count, dimensions and duration before completing the silent H.264 MP4. Use a new output filename and receiver for another recording. `captureProgress.cancel()` cancels encoding while leaving both HTTP servers running.
 
-`scripts/capture-gallery.js` uses the same scene for an interface-free 800 × 800 WebP, rendered at 1600 × 1600. Review its saved preview before copying it to the gallery's `files/15.webp`.
+`scripts/capture-gallery.js` uses the same scene for an interface-free 800 × 800 WebP, rendered at 1600 × 1600. By default it saves `preview.webp` in the receiver's `exports/video-previews/` folder. Review that capture before copying it to `15/preview.webp`, which is shared by the gallery and this experiment's social previews.
 
 ## Credits
 
