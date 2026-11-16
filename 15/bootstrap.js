@@ -1,9 +1,11 @@
+import { createLoadingScreen } from './loading.js';
+
+const loading = createLoadingScreen();
 try {
+  loading.update(.02, 'Reading the dunes…');
   const { startExperiment } = await import('./main.js');
-  await startExperiment();
+  await startExperiment(loading);
 } catch (error) {
-  const status = document.querySelector('#status');
-  status.hidden = false;
-  status.textContent = `Unable to start: ${error.message}`;
+  loading.fail(`Unable to start: ${error.message}`);
   console.error(error);
 }

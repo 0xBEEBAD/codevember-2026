@@ -6,12 +6,12 @@ import { createDesertGrass } from './desert-grass.js';
 import { cathedral } from './world-layout.js';
 import { randomSeed, noise, smoothstep, terrainHeight, canyonCenter, canyonWidth } from './noise.js';
 
-export async function createLandscape(scene, materials, status) {
+export async function createLandscape(scene, materials, reportProgress = () => {}) {
   const group = new BundleGroup(); group.name = 'Eroded sandstone canyon';
   const random = randomSeed(151515), dummy = new Object3D(), variants = [], transforms = [], batches = [], obstacles = [], collisionGeometry = [], smallCollisionGeometry = [];
   const specs = [...Array.from({ length: 8 }, () => ['cliff', 112]), ...Array.from({ length: 8 }, () => ['boulder', 64]), ...Array.from({ length: 4 }, () => ['scree', 20]), ...Array.from({ length: 4 }, () => ['shelf', 80]), ...Array.from({ length: 8 }, () => ['distant', 16])];
   for (let i = 0; i < specs.length; i++) {
-    status.textContent = `Eroding sandstone · ${i + 1} / ${specs.length}`;
+    reportProgress(i / specs.length * .35, `Eroding sandstone · ${i + 1} / ${specs.length}`);
     await new Promise(requestAnimationFrame);
     variants.push(createRockGeometry(151 + i * 7919, ...specs[i])); transforms.push([]);
     materials.registerRock(variants[i], i);
@@ -19,6 +19,7 @@ export async function createLandscape(scene, materials, status) {
     smallCollisionGeometry.push(i < 24 ? createRockGeometry(151 + i * 7919, specs[i][0], 8) : null);
     variants[i].computeBoundingBox();
   }
+  reportProgress(.35, 'Shaping the canyon…'); await new Promise(requestAnimationFrame);
   function rock(index, x, y, z, sx, sy, sz, ry = 0, tilt = .04, shapeRandom = random) {
     dummy.position.set(x, y, z); dummy.scale.set(sx, sy, sz);
     dummy.rotation.set((shapeRandom() - .5) * tilt, ry, (shapeRandom() - .5) * tilt); dummy.updateMatrix();
@@ -286,6 +287,7 @@ export async function createLandscape(scene, materials, status) {
     reflectionMeshes.push(mesh); reflectionGroup.add(mesh);
   }
   scene.add(reflectionGroup);
+  reportProgress(.5, 'Sculpting the dunes…'); await new Promise(requestAnimationFrame);
   const terrain = new PlaneGeometry(1700, 1900, 420, 470); terrain.rotateX(-Math.PI / 2); terrain.translate(0, 0, -520);
   const p = terrain.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, terrainHeight(p.getX(i), p.getZ(i)));
@@ -298,6 +300,7 @@ export async function createLandscape(scene, materials, status) {
   const distanceTerrain = [];
   let innerX = 850, innerZ = 950;
   for (const outer of [1700, 3200, 6000, 11000, 19000, 31000, 50000, 80000, 125000, 200000]) {
+    reportProgress(.55 + distanceTerrain.length * .04, 'Extending the horizon…'); await new Promise(requestAnimationFrame);
     // Concentrate vertices in the northern ranges. Uniform resolution spent
     // most of the memory on empty plains while leaving distant crests faceted.
     // All four sides retain identical radial rows to meet without corner gaps.
@@ -406,7 +409,9 @@ export async function createLandscape(scene, materials, status) {
     }
     return terrainHeight(x, z);
   }
+  reportProgress(.95, 'Scattering desert details…'); await new Promise(requestAnimationFrame);
   const grass = createDesertGrass(group, heightAt); group.needsUpdate = true;
+  reportProgress(1, 'The landscape is ready');
   return { group, reflectionGroup, reflectionMeshes, variants, batches, bedrock, ground, distanceTerrain, obstacles, heightAt, grass, detailInstances: grass.instances,
     surfaceAt(x, z) { const rock = islandSurface(x, z); return Number.isFinite(rock) ? Math.max(heightAt(x, z), rock) : heightAt(x, z); },
     instances: transforms.reduce((n, t) => n + t.length, 0) + 1,

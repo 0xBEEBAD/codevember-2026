@@ -12,9 +12,10 @@ import { createRover } from './rover.js';
 import { createDust } from './dust.js';
 import { createDaylightControls } from './daylight.js';
 
-export async function startExperiment() {
+export async function startExperiment(loading) {
   if (!navigator.gpu) throw new Error('Mirage needs a browser with WebGPU.');
-  const canvas = document.querySelector('canvas'), status = document.querySelector('#status');
+  const canvas = document.querySelector('canvas');
+  loading.update(.05, 'Preparing the view…');
   // This revision's meshlet pipeline requires ordinary depth. A 2 m near
   // plane retains useful precision across the 200 km landscape without fallback.
   const renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
@@ -32,11 +33,14 @@ export async function startExperiment() {
   let post;
   const changed = () => { dirty = true; post?.requestFrames(); };
   const navigation = createCameraControls(camera, canvas, settings, changed);
+  loading.update(.1, 'Mixing sand and stone…'); await new Promise(requestAnimationFrame);
   const materials = createMaterials(), atmosphere = createAtmosphere(scene, camera, renderer);
-  const landscape = await createLandscape(scene, materials, status);
-  status.textContent = 'Carving the rock sanctuary…'; await new Promise(requestAnimationFrame);
+  const landscape = await createLandscape(scene, materials, (fraction, message) => loading.update(.12 + fraction * .6, message));
+  loading.update(.72, 'Carving the sanctuary…'); await new Promise(requestAnimationFrame);
   const architecture = createArchitecture(scene, materials, landscape.surfaceAt);
+  loading.update(.8, 'Preparing your rover…'); await new Promise(requestAnimationFrame);
   const rover = await createRover(scene, canvas, landscape, architecture, changed); navigation.attachRover(rover);
+  loading.update(.85, 'Stirring the dust…'); await new Promise(requestAnimationFrame);
   const dust = createDust(camera, landscape, atmosphere);
   post = createPostProcessing(renderer, scene, camera, atmosphere, dust);
   nodeTime.onRenderUpdate(() => time);
@@ -90,9 +94,14 @@ export async function startExperiment() {
     inspect() { return { time, rockVariants: landscape.variants.length, rockInstances: landscape.instances, grassInstances: landscape.detailInstances, masonryInstances: architecture.instances, roverInstances: rover.instances, terrainExtent: 200000, sourceTriangles: landscape.triangles + architecture.triangles, dpr: renderer.getPixelRatio(), meshlets: meshlets.isMeshletDrawingPipeline }; },
     dispose() { disposed = true; renderer.setAnimationLoop(null); abort.abort(); navigation.dispose(); rover.dispose(); dust.dispose(); gui.destroy(); post.dispose(); landscape.dispose(); architecture.dispose(); atmosphere.dispose(); materials.dispose(); renderer.dispose(); }
   };
-  renderer.onDeviceLost = info => { disposed = true; renderer.setAnimationLoop(null); status.hidden = false; status.textContent = `Graphics device lost: ${info.message}. Reload to start again.`; };
-  status.textContent = 'Preparing meshlets and sandstone shadows…'; await new Promise(requestAnimationFrame);
-  await post.compile(); render(); status.hidden = true; window.mirage.ready = true;
+  renderer.onDeviceLost = info => { disposed = true; renderer.setAnimationLoop(null); loading.fail(`Graphics device lost: ${info.message}. Reload to start again.`); };
+  loading.update(.9, 'Warming the desert light…'); await new Promise(requestAnimationFrame);
+  await post.compile();
+  if (disposed) return;
+  loading.update(.97, 'Opening the desert…'); await new Promise(requestAnimationFrame);
+  render(); await renderer.backend.device.queue.onSubmittedWorkDone();
+  if (disposed) return;
+  loading.finish(); window.mirage.ready = true;
   renderer.setAnimationLoop(timestamp => {
     if (disposed || manual || document.hidden) { last = null; meterStart = null; meterFrames = 0; return; }
     const elapsed = last === null ? 0 : (timestamp - last) / 1000, dt = Math.min(elapsed, .05); last = timestamp;
