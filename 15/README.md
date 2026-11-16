@@ -56,7 +56,7 @@ Box3D drives the rigid chassis with four independently suspended tires, steering
 
 Each leg has two main pieces: an outward shoulder and a shin aligned with the inboard steering plane. The shin meets the wheel hub through the tire's central opening, without an exposed horizontal connector. The chassis has a longer rounded rear shell with a matching collision hull. Shadow invalidation compares the current chassis and wheel pose with the last rendered pose, so slow downhill creep and suspension settling cannot leave a cached shadow behind.
 
-Sand contacts stamp subtle tread impressions into a bounded ring of 8,192 instances. Tracks and wheel spray follow each tire's steering and travel direction, and stop on stone or unsupported wheels. The camera keeps its follow radius through turns and continues easing after input ends. Gentle idle sway and speed-dependent vibration affect only its final orientation, leaving the chase distance and collision sweep stable. Camera drift and reduced-motion settings disable the sway.
+Sand contacts stamp subtle tread impressions into a bounded ring of 8,192 instances. Tracks and wheel spray follow each tire's steering and travel direction, and stop on stone or unsupported wheels. Existing wheel dust keeps drifting and fading after the rover stops, including when ambient animation is paused. The camera keeps its follow radius through turns and continues easing after input ends. Gentle idle sway and speed-dependent vibration affect only its final orientation, leaving the chase distance and collision sweep stable. Camera drift and reduced-motion settings disable the sway.
 
 ## Source map
 

@@ -65,6 +65,9 @@ export async function startExperiment() {
     if (!settings.paused) time += dt;
     daylight.update(daylightDt);
     navigation.update(dt, time);
+    // Include the frame that removes the last puff when ambient animation
+    // is paused; otherwise its final image can remain on the canvas.
+    if (dust.needsFrame) changed();
     dust.update(dt, rover, settings);
     if (!settings.paused) changed();
   }
@@ -96,7 +99,7 @@ export async function startExperiment() {
     // Keep the lighting transition at two wall-clock seconds even if a heavy
     // frame requires a smaller timestep for the vehicle simulation.
     advance(dt, elapsed);
-    if (dirty || !settings.paused || post.needsFrame) {
+    if (dirty || !settings.paused || post.needsFrame || dust.needsFrame) {
       render();
       if (meterStart === null) meterStart = timestamp;
       meterFrames++;

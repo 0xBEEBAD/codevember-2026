@@ -33,9 +33,21 @@ export async function checkDust(app = window.mirage) {
     rig.active = true; options.wheelDust = 1; for (const w of rig.physics.wheels) w.sand = w.contact = true;
     tick(1800); assert(probe.diagnostics.alive <= probe.diagnostics.capacity, 'Particle pool grows without bounds');
     report.peakPool = probe.diagnostics.alive;
-    options.paused = true; rig.moving = false;
-    const before = wheelParticles().map(p => [p.age, p.x, p.y, p.z]); tick(60);
-    assert(JSON.stringify(before) === JSON.stringify(wheelParticles().map(p => [p.age, p.x, p.y, p.z])), 'Paused dust moves');
+    report.stoppedWake = [];
+    for (const paused of [false, true]) {
+      probe.clear(); options.paused = paused; rig.moving = true; rig.physics.velocity[2] = -10; tick(30);
+      const puff = wheelParticles().find(p => p.kind === 'wake' && p.age < .2);
+      const before = { age: puff.age, x: puff.x, y: puff.y, z: puff.z }, emitted = probe.diagnostics.emitted;
+      rig.moving = false; rig.physics.velocity[2] = 0;
+      assert(probe.needsFrame, 'Lingering wheel dust does not request rendering');
+      tick(30);
+      const drift = Math.hypot(puff.x - before.x, puff.y - before.y, puff.z - before.z);
+      assert(Math.abs(puff.age - before.age - .5) < 1e-8 && drift > .05, 'Wheel dust freezes when the rover stops');
+      assert(probe.diagnostics.emitted === emitted, 'Stopped wheels keep emitting dust');
+      tick(240);
+      assert(probe.diagnostics.wheel === 0 && !probe.needsFrame, 'Stopped wheel dust never finishes fading');
+      report.stoppedWake.push({ paused, drift, emissionStopped: true, dissipated: true });
+    }
     const regionalState = () => probe.particles.filter(p => p.zone >= 0).map(p => [p.age, p.x, p.y, p.z]);
     const fixed = regionalState(); probeCamera.position.x += 600; probeCamera.position.z -= 400; tick(1);
     assert(JSON.stringify(fixed) === JSON.stringify(regionalState()), 'Regional dust follows the camera');
@@ -43,9 +55,6 @@ export async function checkDust(app = window.mirage) {
     options.paused = false; tick(30);
     assert(JSON.stringify(fixed) !== JSON.stringify(regionalState()), 'World dust does not drift after unpausing');
     report.worldAnchoredRegions = { zones: probe.dustZones.length, particles: fixed.length };
-    options.paused = false; rig.physics.velocity[2] = 0; tick(240);
-    assert(probe.diagnostics.wheel === 0, 'Wheel dust does not dissipate after stopping');
-    report.pausedAndExpired = true;
   } finally { probe.dispose(); }
 
   app.manual = true; settings.dust = 0; settings.wheelDust = 1; settings.paused = true;

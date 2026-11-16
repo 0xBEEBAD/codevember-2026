@@ -130,7 +130,9 @@ export function createDust(camera, landscape, atmosphere) {
   function update(dt, rover, settings) {
     currentSettings = settings;
     const ambientDt = settings.paused ? 0 : Math.min(.1, dt);
-    const wheelDt = settings.paused && !rover.moving ? 0 : Math.min(.1, dt);
+    // Driving remains interactive while ambient animation is paused. Its
+    // emitted dust must also finish drifting and settling after a stop.
+    const wheelDt = Math.min(.1, dt);
     clock += ambientDt;
     if (Math.hypot(camera.position.x - windAnchor.x, camera.position.z - windAnchor.z) > 180) {
       for (let i = 0; i < localWindCount; i++) windParticle(particles[i], true);
@@ -225,6 +227,7 @@ export function createDust(camera, landscape, atmosphere) {
       material.needsUpdate = true;
     },
     update, prepare,
+    get needsFrame() { return currentSettings.wheelDust > 0 && particles.some(p => p.kind !== 'wind' && p.age < p.life); },
     clear() { for (const p of particles) p.age = Infinity; credits.fill(0); windAnchor.set(Infinity, 0, Infinity); zonesInitialized = false; emitted = 0; mesh.count = 0; },
     get diagnostics() { return { capacity, alive: particles.filter(p => p.age < p.life).length, wind: particles.slice(0, windCount).filter(p => p.age < p.life).length, regional: particles.filter(p => p.zone >= 0 && p.age < p.life).length, zones: dustZones.length, wheel: particles.slice(windCount).filter(p => p.age < p.life).length, visible: mesh.count, emitted, prepared, clock }; },
     dispose() { scene.remove(mesh); mesh.dispose(); geometry.dispose(); material.dispose(); map.dispose(); fallbackDepth.dispose(); }
