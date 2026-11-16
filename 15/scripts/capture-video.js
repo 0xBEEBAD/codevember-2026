@@ -10,7 +10,7 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
   if (innerWidth !== SIZE || innerHeight !== SIZE || devicePixelRatio !== 1) throw new Error('Use a 1024 × 1024 CSS viewport at DPR 1');
   const { rover, renderer, camera, navigation, settings } = app;
   const saved = { settings: { ...settings }, manual: app.manual, rover: rover.capture(),
-    eye: camera.position.clone(), rotation: camera.quaternion.clone(), fov: camera.fov,
+    eye: camera.position.clone(), rotation: camera.quaternion.clone(), up: camera.up.clone(), fov: camera.fov,
     update: navigation.update, physicsUpdate: rover.physics.update, controls: navigation.controls.enabled,
     projector: app.architecture.projection.light.visible,
     ui: document.body.classList.contains('ui-hidden') };
@@ -51,11 +51,14 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
   }
   function compose() {
     if (current.gameCamera) return;
-    const t = ease(local / Math.max(1, current.frames - 1));
+    const progress = local / Math.max(1, current.frames - 1);
+    const t = current.rockTarget ? progress : ease(progress);
     const radius = mix(...current.radius, t), height = mix(...current.height, t);
     const angle = smoothYaw + mix(...current.orbit, t);
     if (current.rockTarget) {
-      const [x, y, z] = current.rockTarget, a = mix(...current.orbit, t);
+      const target = new Vector3().fromArray(current.rockTarget);
+      if (current.rockFollow) target.lerp(smoothPosition.clone().add(new Vector3(0, 1.5, 0)), current.rockFollow);
+      const { x, y, z } = target, a = mix(...current.orbit, t);
       camera.position.set(x + Math.sin(a) * radius, y + height, z + Math.cos(a) * radius);
       camera.lookAt(x, y, z); camera.updateMatrixWorld(); return;
     }
@@ -65,13 +68,15 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
       const target = new Vector3(-.9, .7, .1).applyAxisAngle(axis, smoothYaw).add(smoothPosition);
       camera.lookAt(target); camera.updateMatrixWorld(); return;
     }
+    if (current.overhead) {
+      camera.up.set(0, 0, -1);
+      camera.position.copy(smoothPosition); camera.position.y += height;
+      camera.lookAt(smoothPosition); camera.updateMatrixWorld(); return;
+    }
     camera.position.set(Math.sin(angle) * radius, height, Math.cos(angle) * radius).add(smoothPosition);
     // Stay in front of the threshold: the projected seal is behind this
     // camera, rather than a foreground spoiler during the terrace reveal.
     if (current.stairs) camera.position.z = Math.max(camera.position.z, -325);
-    if (current.terraceCamera) {
-      camera.position.set(mix(-6, -8, t), smoothPosition.y + mix(1.15, 1, t), smoothPosition.z - 4.5);
-    }
     // Cinematic crane paths remain above the actual terrain, without the
     // gameplay boom shortening when a distant outcrop crosses the sightline.
     camera.position.y = Math.max(camera.position.y, ground(camera.position.x, camera.position.z, current.stairs) + (current.lowCamera ? .45 : current.stairs ? 2 : 1.8));
@@ -79,25 +84,29 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
     camera.updateMatrixWorld();
   }
   function begin(index) {
+    const continued = shots[index].continueFrom !== undefined;
     current = shots[index]; local = 0; waypoint = 0; drive = { throttle: 0, turn: 0 };
     settings.drift = !!current.gameCamera;
-    camera.fov = current.wheelCamera ? 58 : 52; camera.updateProjectionMatrix();
+    camera.up.set(0, 1, 0);
+    camera.fov = current.fov ?? (current.wheelCamera ? 58 : 52); camera.updateProjectionMatrix();
     app.daylight.select(current.timeOfDay || 'Day'); app.daylight.update(2);
     if (current.start === 'opening') rover.restore(opening);
-    else {
+    else if (!continued) {
       const [x, z] = current.start, goal = current.route?.[0] || current.goal, yaw = Math.atan2(x - goal[0], z - goal[1]);
       rover.restore({ ...opening, position: [x, ground(x, z, current.stairs) + 1.2, z], rotation: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] });
     }
-    for (let i = 0; i < 180; i++) rover.update(1 / 120);
-    if (index > 0) { steer(); for (let i = 0; i < 30; i++) { steer(); rover.update(1 / FPS); } }
-    rover.tracks.clear(); rover.tracks.seedApproach(rover.physics.wheels, rover.yaw); app.dust.clear();
+    if (!continued) {
+      for (let i = 0; i < 180; i++) rover.update(1 / 120);
+      if (index > 0) { steer(); for (let i = 0; i < 30; i++) { steer(); rover.update(1 / FPS); } }
+      rover.tracks.clear(); rover.tracks.seedApproach(rover.physics.wheels, rover.yaw); app.dust.clear();
+    }
     smoothPosition.copy(rover.position); smoothYaw = rover.yaw;
     if (current.gameCamera) navigation.setView('Rover');
     compose(); app.post.invalidate(); app.atmosphere.sun.shadow.needsUpdate = true;
     events.push({ shot: current.name, frame: current.startFrame, position: rover.position.toArray() });
   }
   function step() {
-    local++; if (current.transition && local === FPS) app.daylight.select(current.transition);
+    local++; if (current.transition && local === Math.round((current.transitionAt ?? 1) * FPS)) app.daylight.select(current.transition);
     steer(); app.advance(1 / FPS);
     smoothPosition.lerp(rover.position, 1 - Math.exp(-8 / FPS));
     smoothYaw += Math.atan2(Math.sin(rover.yaw - smoothYaw), Math.cos(rover.yaw - smoothYaw)) * (1 - Math.exp(-3 / FPS));
@@ -110,7 +119,7 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
       ctx.font = '15px Menlo, monospace'; ctx.letterSpacing = '2px'; ctx.fillText('CODEVEMBER 2026 / 15 / MIRAGE', 30, 40);
       ctx.font = 'bold 15px Arial, sans-serif'; ctx.letterSpacing = '.4px'; ctx.textAlign = 'right'; ctx.fillText('›  SETTINGS', 990, 40);
       ctx.font = '12px Menlo, monospace'; ctx.letterSpacing = '1px'; ctx.textAlign = 'left'; ctx.globalAlpha = .8;
-      if (!current.rockTarget) ctx.fillText(`${Math.round(rover.speed * 3.6)} KM/H`, 30, 992);
+      if (!current.rockTarget || current.throttle) ctx.fillText(`${Math.round(rover.speed * 3.6)} KM/H`, 30, 992);
       ctx.textAlign = 'right'; ctx.font = '11px Menlo, monospace';
       for (const [name, x] of [['Dawn', 828], ['Day', 895], ['Sunset', 990]]) {
         ctx.globalAlpha = settings.timeOfDay === name ? .95 : .6; ctx.fillText(name.toUpperCase(), x, 992);
@@ -130,6 +139,10 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
       await render(); next++;
     },
     async preview(index, fraction = .5) {
+      if (shots[index].continueFrom !== undefined) {
+        begin(shots[index].continueFrom);
+        for (let i = 1; i < current.frames; i++) step();
+      }
       begin(index); const count = Math.round((current.frames - 1) * fraction);
       for (let i = 0; i < count; i++) step();
       for (let i = 0; i < 6; i++) await render();
@@ -141,7 +154,7 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
       rover.restore(saved.rover); rover.tracks.clear(); rover.tracks.seedApproach(rover.physics.wheels, rover.yaw); app.dust.clear();
       app.daylight.select(saved.settings.timeOfDay); app.daylight.update(2);
       Object.assign(settings, saved.settings); navigation.controls.enabled = saved.controls;
-      navigation.setView(saved.settings.view); camera.position.copy(saved.eye); camera.quaternion.copy(saved.rotation);
+      navigation.setView(saved.settings.view); camera.position.copy(saved.eye); camera.quaternion.copy(saved.rotation); camera.up.copy(saved.up);
       app.resize(); camera.fov = saved.fov; camera.updateProjectionMatrix();
       document.body.classList.toggle('ui-hidden', saved.ui); app.post.invalidate(); await frame(); app.render(); app.manual = saved.manual;
     }

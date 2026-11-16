@@ -209,7 +209,9 @@ export function createRoverModel() {
     group.position.fromArray(physics.position); group.quaternion.fromArray(physics.rotation);
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i], state = physics.wheels[i];
-      leg.hip.set(leg.side * .50, .02, leg.end * .57);
+      // Attach at the shoulder bearing's outer face, preserving the original
+      // leg fold while reducing how much the upper arm enters the body.
+      leg.hip.set(leg.side * .58, .02, leg.end * .57);
       leg.foot.set(leg.side, .10 - state.length, leg.end * .92);
       leg.knuckle.copy(leg.foot);
       const cs = Math.cos(state.angle), sn = Math.sin(state.angle);

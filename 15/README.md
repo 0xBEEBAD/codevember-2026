@@ -54,6 +54,8 @@ The scene has 8,465 rock instances, 8,859 masonry instances and roughly 181 mill
 
 Box3D drives the rigid chassis with four independently suspended tires, steering forces, reverse and braking. A moving collision patch uses terrain triangles, shared procedural rock collision meshes and nearby masonry. Coordinates rebase locally for long drives. Tire sweeps climb small stones; a camera sphere sweep protects the eased chase camera from real obstacles without snapping to oversized rock bounds.
 
+Automatic recovery detects a settled rollover after 1.8 seconds, or 3.5 seconds of throttle with less than 80 cm of progress. It checks nearby collision surfaces for wheel support and chassis clearance, then gently lifts and rights the rover over 1.6 seconds. A blocked rover prefers a position behind the obstruction. Brief jumps, slow progress and ordinary parking do not trigger recovery. Tracks and fresh wheel spray pause during the assist; existing dust keeps fading.
+
 Each leg has two main pieces: an outward shoulder and a shin aligned with the inboard steering plane. The shin meets the wheel hub through the tire's central opening, without an exposed horizontal connector. The chassis has a longer rounded rear shell with a matching collision hull. Shadow invalidation compares the current chassis and wheel pose with the last rendered pose, so slow downhill creep and suspension settling cannot leave a cached shadow behind.
 
 Sand contacts stamp subtle tread impressions into a bounded ring of 8,192 instances. Tracks and wheel spray follow each tire's steering and travel direction, and stop on stone or unsupported wheels. Existing wheel dust keeps drifting and fading after the rover stops, including when ambient animation is paused. The camera keeps its follow radius through turns and continues easing after input ends. Gentle idle sway and speed-dependent vibration affect only its final orientation, leaving the chase distance and collision sweep stable. Camera drift and reduced-motion settings disable the sway.
@@ -66,7 +68,7 @@ Sand contacts stamp subtle tread impressions into a bounded ring of 8,192 instan
 | `landscape.js`, `island-bedrock.js`, `scene-details.js`, `desert-grass.js` | Layout, rock clusters, foundations, ruins and grass |
 | `architecture.js`, `sanctuary-light.js` | Sanctuary, stairs, masonry colliders and projected seal |
 | `materials.js` | Generated textures and material shading |
-| `rover.js`, `rover-input.js`, `rover-model.js`, `rover-physics.js`, `rover-shadow.js`, `wheel-tracks.js` | Vehicle, keyboard/touch input, physics, shadow invalidation and tracks |
+| `rover.js`, `rover-input.js`, `rover-model.js`, `rover-physics.js`, `rover-recovery.js`, `rover-shadow.js`, `wheel-tracks.js` | Vehicle, keyboard/touch input, physics, recovery, shadow invalidation and tracks |
 | `atmosphere.js`, `atmosphere-model.js`, `cloud-shadows.js`, `daylight.js` | Sky, IBL, sunlight, haze and time presets |
 | `indirect-lighting.js`, `mirage-reflector.js`, `post-processing.js`, `dust.js` | GI, reflections, heat, particles and final composition |
 | `mirage-pipeline.js`, `vendor/` | Local three.js rendering extensions |
@@ -79,7 +81,7 @@ npm ci
 npm test
 ```
 
-CPU tests cover geometry, curvature, joystick response, vehicle dynamics, terrain continuity, smooth dune crests, terrain stitching, talus relaxation, aerosol transmission and mirage conditions. Browser diagnostics run from the console after `window.mirage.ready` is true:
+CPU tests cover geometry, curvature, joystick response, vehicle dynamics and recovery, terrain continuity, smooth dune crests, terrain stitching, talus relaxation, aerosol transmission and mirage conditions. Browser diagnostics run from the console after `window.mirage.ready` is true:
 
 ```js
 (await import('./tests/rover-input.browser.js')).checkRoverInput();

@@ -1,4 +1,5 @@
 import Box3D from 'box3d.js/inline';
+import { createRecoveryMonitor } from './rover-recovery.js';
 
 const STEP = 1 / 120, RADIUS = .385, REST = .90, TRAVEL = 1.45, PATCH_RADIUS = 32;
 const add = (a, b) => a.map((v, i) => v + b[i]);
@@ -54,6 +55,8 @@ export async function createRoverPhysics(heightAt, obstacles = [], architecture 
   let ground = null, mesh = null, stoneMesh = null, staticBodies = [], patchX = Infinity, patchZ = Infinity, patchY = Infinity;
   let position = [95, heightAt(95, 150) + 1.05, 150], rotation = [0, 0, 0, 1], velocity = [0, 0, 0], angular = [0, 0, 0];
   let accumulator = 0, steering = 0, distance = 0, signedSpeed = 0;
+  const recoveryMonitor = createRecoveryMonitor();
+  let recovery = null, safePose = null, recoveries = 0, lastRecovery = null;
   let contactBounds = [], rockTriangles = 0, nearbyRocks = 0, patchMs = 0;
   const rockMeshes = new Map(), rockTransforms = new WeakMap();
   const tirePoints = [], sweepPoints = new Array(72);
@@ -207,19 +210,82 @@ export async function createRoverPhysics(heightAt, obstacles = [], architecture 
       wheel.spin -= longitudinal * STEP / RADIUS;
     }
   }
+  function recoveryTarget(reason) {
+    const forward = rotate([0, 0, -1], rotation);
+    const yaw = Math.atan2(-forward[0], -forward[2]);
+    const upright = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)];
+    const candidates = reason === 'tipped' ? [[position[0], position[2]]] : [];
+    // Prefer backing away from the obstruction. Search only the local patch,
+    // testing the actual collision surfaces, including the sanctuary stairs.
+    for (const radius of [3, 5, 8]) for (const offset of [0, -.7, .7, -1.4, 1.4, Math.PI]) {
+      candidates.push([position[0] + Math.sin(yaw + offset) * radius, position[2] + Math.cos(yaw + offset) * radius]);
+    }
+    const hull = [];
+    for (let i = 0; i < chassisVertices.length; i += 3) hull.push(...rotate(chassisVertices.slice(i, i + 3), upright));
+    for (const [x, z] of candidates) {
+      const supports = [];
+      for (const side of [-1, 1]) for (const end of [-1, 1]) {
+        const offset = rotate([side, 0, end * .92], upright);
+        const ray = [x + offset[0], position[1] + 3, z + offset[2]];
+        const hit = b3.b3World_CastRayClosest(world, sub(ray, origin), [0, -7, 0], query);
+        if (hit.hit && hit.normal[1] > .7) supports.push(hit.point[1] + origin[1]);
+      }
+      if (supports.length !== 4 || Math.max(...supports) - Math.min(...supports) > .9) continue;
+      const target = [x, Math.max(...supports) + 1.2, z];
+      let blocked = false;
+      b3.b3World_OverlapShape(world, sub(target, origin), hull, .15, query, () => { blocked = true; return false; });
+      if (!blocked) return { position: target, rotation: upright };
+    }
+    return safePose && Math.hypot(position[0] - safePose.position[0], position[2] - safePose.position[2]) < 16 ? safePose : null;
+  }
+  function startRecovery(reason) {
+    const target = recoveryTarget(reason);
+    recoveryMonitor.reset(3);
+    if (!target) return;
+    recovery = { from: [...position], rotation: [...rotation], target, elapsed: 0 };
+    recoveries++; lastRecovery = reason; steering = 0;
+  }
+  function recoverStep() {
+    recovery.elapsed += STEP;
+    const t = Math.min(1, recovery.elapsed / 1.6), blend = t * t * (3 - 2 * t);
+    const { from, target } = recovery;
+    position = from.map((v, i) => v + (target.position[i] - v) * blend);
+    // Lift before rolling so the roof and arms clear the terrain. The smooth
+    // arc also gives the chase camera time to follow without a teleport.
+    position[1] += Math.sin(Math.PI * t) ** 2 * 1.4;
+    let q = target.rotation, cosine = dot(recovery.rotation, q);
+    if (cosine < 0) { q = scale(q, -1); cosine = -cosine; }
+    const angle = Math.acos(clamp(cosine, -1, 1));
+    rotation = angle < .001 ? [...q] : add(scale(recovery.rotation, Math.sin((1 - blend) * angle) / Math.sin(angle)), scale(q, Math.sin(blend * angle) / Math.sin(angle)));
+    velocity = [0, 0, 0]; angular = [0, 0, 0]; signedSpeed = 0;
+    b3.b3Body_SetTransform(body, sub(position, origin), rotation);
+    b3.b3Body_SetLinearVelocity(body, velocity); b3.b3Body_SetAngularVelocity(body, angular);
+    if (t === 1) { recovery = null; recoveryMonitor.reset(3); }
+  }
   function update(dt, throttle = 0, turn = 0, boost = false) {
     accumulator += Math.min(.1, Math.max(0, dt));
     while (accumulator >= STEP) {
       read(); patch();
+      if (recovery) { recoverStep(); accumulator -= STEP; continue; }
       const maximumAngle = .58 / (1 + Math.abs(signedSpeed) * .06);
       steering += (turn * maximumAngle - steering) * (1 - Math.exp(-STEP * 7));
       contacts(throttle, boost, true);
       b3.b3World_Step(world, STEP, 2); distance += signedSpeed * STEP; accumulator -= STEP;
+      const up = rotate([0, 1, 0], rotation)[1];
+      if (up > .85 && wheels.every(w => w.contact) && Math.hypot(...angular) < .5 &&
+          (!safePose || Math.hypot(position[0] - safePose.position[0], position[2] - safePose.position[2]) > 3)) {
+        safePose = { position: [...position], rotation: [...rotation] };
+      }
+      const reason = recoveryMonitor.update(STEP, { position, up, speed: Math.hypot(velocity[0], velocity[2]),
+        verticalSpeed: velocity[1], angularSpeed: Math.hypot(...angular), throttle });
+      if (reason) startRecovery(reason);
     }
     read(); contacts(0, false, false);
+    if (recovery) for (const wheel of wheels) wheel.contact = wheel.sand = false;
   }
   function capture() { return { position: [...position], rotation: [...rotation], velocity: [...velocity], angular: [...angular], steering, distance, spins: wheels.map(w => w.spin) }; }
   function restore(state) {
+    recovery = safePose = null; recoveryMonitor.reset();
     position = [...state.position]; rotation = [...state.rotation]; velocity = [...state.velocity]; angular = [...state.angular];
     steering = state.steering; distance = state.distance; accumulator = 0;
     wheels.forEach((w, i) => { w.spin = state.spins[i]; });
@@ -243,10 +309,11 @@ export async function createRoverPhysics(heightAt, obstacles = [], architecture 
   return { wheels, update, capture, restore, cameraFraction,
     get position() { return position; }, get rotation() { return rotation; }, get velocity() { return velocity; },
     get angularVelocity() { return angular; },
+    get recovering() { return recovery !== null; },
     get speed() { return Math.hypot(velocity[0], velocity[2]); }, get signedSpeed() { return signedSpeed; },
     get yaw() { const f = rotate([0, 0, -1], rotation); return Math.atan2(-f[0], -f[2]); },
     get steering() { return steering; }, get distance() { return distance; },
-    get diagnostics() { return { engine: 'Box3D 0.1.1', step: STEP, mass, contacts: wheels.filter(w => w.contact).length, stoneContacts: wheels.filter(w => w.contact && !w.sand).length, patch: [patchX, patchZ], patchMs, sharedRockMeshes: rockMeshes.size, bodies: staticBodies.length + 2, nearbyRocks, rockTriangles }; },
+    get diagnostics() { return { engine: 'Box3D 0.1.1', step: STEP, mass, contacts: wheels.filter(w => w.contact).length, stoneContacts: wheels.filter(w => w.contact && !w.sand).length, recovering: recovery !== null, recoveries, lastRecovery, patch: [patchX, patchZ], patchMs, sharedRockMeshes: rockMeshes.size, bodies: staticBodies.length + 2, nearbyRocks, rockTriangles }; },
     dispose() { clearPatch(); for (const data of rockMeshes.values()) b3.b3DestroyMesh(data); rockMeshes.clear(); b3.b3DestroyWorld(world); }
   };
 }

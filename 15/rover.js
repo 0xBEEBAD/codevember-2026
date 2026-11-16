@@ -30,8 +30,10 @@ export async function createRover(scene, canvas, landscape, architecture, change
   function update(dt) {
     const { throttle, turn, boost } = input.sample();
     physics.update(dt, throttle, turn, boost);
-    speed = physics.speed; moving = speed > .015 || Math.abs(physics.velocity[1]) > .015 || !!throttle || !!turn;
-    pose(); tracks.update(physics.wheels); if (moving) changed();
+    speed = physics.speed; moving = physics.recovering || speed > .015 || Math.abs(physics.velocity[1]) > .015 || !!throttle || !!turn;
+    pose();
+    if (physics.recovering) tracks.breakPaths(); else tracks.update(physics.wheels);
+    if (moving) changed();
   }
   const cameraTarget = [0, 0, 0], cameraEye = [0, 0, 0];
   function clipCamera(eye, target) {
