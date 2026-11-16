@@ -50,6 +50,7 @@ export async function startExperiment() {
   }
   function render() {
     camera.updateMatrixWorld(); renderer.toneMappingExposure = settings.exposure;
+    if (architecture.stairLod.update(camera, renderer.domElement.height, settings.lodDither !== false)) atmosphere.sun.shadow.needsUpdate = true;
     architecture.projection.update(time, rover);
     const transition = settings.lodDither === false ? 0 : .2;
     if (meshlets.lodTransition !== transition) { meshlets.lodTransition = transition; atmosphere.sun.shadow.needsUpdate = true; post.invalidate(); }

@@ -124,10 +124,10 @@ export function checkCameraMotion() {
       assert(Math.abs(camera.position.distanceTo(navigation.controls.target) - radius) < 1e-8, 'Camera sway changed chase distance');
     };
     for (let i = 0; i < 1800; i++) step();
-    assert(maximumAngle > .001 && maximumAngle < .006, 'Idle camera movement is absent or excessive');
+    assert(maximumAngle > .006 && maximumAngle < .012, 'Idle camera movement is absent or excessive');
     assert(camera.position.distanceTo(eye) < 1e-8, 'Sway accumulated into the camera position');
     rover.speed = 12; rover.moving = true; for (let i = 0; i < 600; i++) step();
-    assert(maximumAngle < .008 && maximumStep < .001, 'Driving vibration jumps or shakes too strongly');
+    assert(maximumAngle < .016 && maximumStep < .001, 'Driving vibration jumps or shakes too strongly');
     settings.drift = false; for (let i = 0; i < 300; i++) step();
     assert(baseline.quaternion.angleTo(camera.quaternion) < 1e-6, 'Reduced-motion setting did not disable sway');
     return { maximumAngleDegrees: maximumAngle * 180 / Math.PI, maximumFrameStepDegrees: maximumStep * 180 / Math.PI, radius, noPositionalDrift: true, reducedMotionRespected: true };

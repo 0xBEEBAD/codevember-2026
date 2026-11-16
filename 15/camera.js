@@ -27,7 +27,7 @@ export function createCameraControls(camera, canvas, settings, changed) {
     const enabled = settings.drift && !settings.paused && !interacting;
     motionWeight += ((enabled ? 1 : 0) - motionWeight) * ease;
     motionSpeed += (Math.min(1, Math.abs(rover.speed) / 12) - motionSpeed) * ease;
-    // Small, non-repeating sway around the freshly computed chase rotation.
+    // Slow, irregular sway around the freshly computed chase rotation.
     // Never feed this into position, orbit radius or the collision sweep.
     // Idle breathing remains gentle; driving adds a little higher-frequency
     // vibration, eased independently of tire contacts and throttle changes.
@@ -35,7 +35,8 @@ export function createCameraControls(camera, canvas, settings, changed) {
       + Math.sin(time * 5.3) * motionSpeed * .0014;
     const yaw = Math.sin(time * .53 + 1.7) * .0017 + Math.sin(time * .91) * .0005;
     const roll = Math.sin(time * .63 + 2.4) * .0007 + Math.sin(time * 3.7) * motionSpeed * .0005;
-    motionEuler.set(pitch * motionWeight, yaw * motionWeight, roll * motionWeight);
+    const strength = motionWeight * 3;
+    motionEuler.set(pitch * strength, yaw * strength, roll * strength);
     camera.quaternion.multiply(motionRotation.setFromEuler(motionEuler));
   }
   function rememberFollowDistance() {

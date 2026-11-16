@@ -1,10 +1,12 @@
-import { BundleGroup, InstancedMesh, Object3D, CylinderGeometry, SphereGeometry, BoxGeometry, TorusGeometry, Shape, ExtrudeGeometry, Color, Mesh, MeshStandardNodeMaterial, PointLight } from 'three/webgpu';
+import { BundleGroup, InstancedMesh, Object3D, CylinderGeometry, SphereGeometry, BoxGeometry, TorusGeometry, Shape, ExtrudeGeometry, Color, Mesh, MeshStandardNodeMaterial, PointLight, Float32BufferAttribute, Vector3 } from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createMasonryGeometry } from './rock-geometry.js';
 import { cathedral } from './world-layout.js';
 import { randomSeed, terrainHeight, noise } from './noise.js';
 import { addSceneDetails } from './scene-details.js';
 import { createSanctuaryProjection } from './sanctuary-light.js';
+import { createStairLod } from './stair-lod.js';
 
 // Reusable carved stones: the detail is real relief geometry, shared by the
 // facade instances and reduced by the same meshlet pipeline as the cliffs.
@@ -85,6 +87,14 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
   // and produces flickering black patches. Keep this small trim mesh intact.
   const spandrels = spandrelGeometry(portal); spandrels.userData.preserveSurface = true;
   geometries.push(spandrels);
+  // Weathered unit blocks distort when stretched into tall stair supports:
+  // their uneven tops can penetrate the thin tread above. Keep the supports
+  // planar and round the exposed tread edge by 6 cm in masonry units.
+  const stairBody = geometries.length, support = new BoxGeometry(1, 1, 1);
+  support.clearGroups(); support.userData.preserveSurface = true; geometries.push(support);
+  const stairTread = geometries.length, tread = new RoundedBoxGeometry(22, .18, .76, 3, .06);
+  tread.scale(1 / 22, 1 / .18, 1 / .76); tread.clearGroups();
+  tread.userData.preserveSurface = true; geometries.push(tread);
   const records = geometries.map(() => []), finishes = geometries.map(() => []), batches = [], colliders = [];
   let sanctuary = true;
   const origin = [cathedral.x, cathedral.y, cathedral.z];
@@ -96,7 +106,7 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
     // made the sanctuary too tall relative to its terrace and staircase.
     (records[g] ||= []).push(dummy.matrix.clone());
     (finishes[g] ||= []).push(finish ?? (sanctuary && (g === 3 || g === 7) ? 'marble' : sanctuary && (g === 4 || g === 5 || g === 9) ? 'gold' : 'stone'));
-    if (g <= 3 || g === 6) {
+    if (g <= 3 || g === 6 || g === stairBody || g === stairTread) {
       const e = dummy.matrix.elements;
       colliders.push({ x: e[12], y: e[13], z: e[14], rx: (Math.abs(e[0]) + Math.abs(e[4]) + Math.abs(e[8])) / 2,
         ry: (Math.abs(e[1]) + Math.abs(e[5]) + Math.abs(e[9])) / 2, rz: (Math.abs(e[2]) + Math.abs(e[6]) + Math.abs(e[10])) / 2, matrix: [...e] });
@@ -271,10 +281,21 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
   // stepped foundations carry the treads down to the island and basin floor.
   const stairScale = 1.18, stairStart = 149;
   const floor = (terrainHeight(origin[0], origin[2] + stairStart * stairScale) - origin[1]) / stairScale;
-  const stairs = [];
+  const stairs = [], flights = [], ramps = [];
   let stairY = floor, stairZ = stairStart;
   const count = 120, rise = (-1.35 - floor) / count;
-  function stairPost(x, y, z) {
+  function stairPost(x, y, z, grounded = false) {
+    if (grounded) {
+      // Entrance posts sit beside the first riser, above the basin floor.
+      // Carry the full plinth footprint into the lowest terrain sample;
+      // the narrow stair sidewall alone leaves its front corners suspended.
+      let ground = Infinity;
+      for (const dx of [-1.35, 0, 1.35]) for (const dz of [-1.35, 0, 1.35]) {
+        ground = Math.min(ground, (surfaceAt(origin[0] + (x + dx) * stairScale, origin[2] + (z + dz) * stairScale) - origin[1]) / stairScale);
+      }
+      const bottom = Math.min(ground - .18, y - .18), top = y + .14;
+      piece(stairBody, x, (bottom + top) / 2, z, 2.7, top - bottom, 2.7);
+    }
     block(x, y + .18, z, 2.7, .36, 2.7);
     block(x, y + 1.25, z, 2.05, 2.2, 2.05);
     block(x, y + 2.42, z, 2.55, .4, 2.55, false, 'orangeMarble');
@@ -282,7 +303,7 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
   let flightStart;
   for (let step = 0; step < count; step++) {
     if (step > 0 && step % 20 === 0) {
-      block(0, stairY - .35, stairZ - 1.65, 23, .7, 4.1);
+      piece(stairBody, 0, stairY - .35, stairZ - 1.65, 23, .7, 4.1);
       for (const side of [-1, 1]) {
         wall(side * 11.7, floor - .5, stairZ - 1.65, 1.8, stairY - floor + .8, 4, Math.ceil((stairY - floor + 1) / 2));
         block(side * 11.7, stairY + .85, stairZ - 1.65, 1.45, 1.5, 4.2);
@@ -294,14 +315,27 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
     stairY += rise;
     if (step % 20 === 0) flightStart = { y: stairY - rise * .5, z: stairZ + .35 };
     const bottom = floor - .7, height = stairY - bottom;
-    block(0, bottom + height / 2, stairZ, 22, height, .76);
-    block(0, stairY + .025, stairZ + .06, 22.35, .12, .82);
+    piece(stairBody, 0, bottom + height / 2, stairZ, 22, height, .76, 0, 0, 0, 'stairNear');
+    // Bury the lower half in its support, with no thin projecting underside
+    // to form a second high-contrast stripe below every distant step.
+    piece(stairTread, 0, stairY, stairZ, 22, .18, .76, 0, 0, 0, 'stairNear');
     for (const side of [-1, 1]) {
       block(side * 11.7, bottom + height / 2, stairZ, 1.5, height + .25, .76);
-      if (step === 0 || step === count - 1) stairPost(side * 11.7, stairY, stairZ);
+      if (step === 0 || step === count - 1) stairPost(side * 11.7, stairY, stairZ, step === 0);
     }
     if (step % 20 === 19) {
       const endY = stairY + rise * .5, endZ = stairZ - .35;
+      const midZ = (flightStart.z + endZ) / 2, depth = flightStart.z - endZ;
+      const ramp = new BoxGeometry(22, 1, depth), positions = ramp.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        const z = positions.getZ(i), t = .5 - z / depth;
+        const y = positions.getY(i) > 0 ? flightStart.y + (endY - flightStart.y) * t + .09 : bottom;
+        positions.setXYZ(i, positions.getX(i), y, z + midZ);
+      }
+      ramp.clearGroups(); ramp.computeVertexNormals();
+      ramp.setAttribute('stairFlight', new Float32BufferAttribute(new Float32Array(positions.count).fill(flights.length), 1));
+      ramps.push(ramp);
+      flights.push({ center: new Vector3(origin[0], origin[1] + (flightStart.y + endY) * .5 * stairScale, origin[2] + midZ * stairScale), step: new Vector3(0, rise * stairScale, -.70 * stairScale) });
       const length = Math.hypot(endY - flightStart.y, endZ - flightStart.z), slope = Math.atan2(endY - flightStart.y, flightStart.z - endZ);
       // Long sloping parapets and coping stones follow each flight. Larger
       // newel posts punctuate the landings instead of a picket on every tread.
@@ -316,6 +350,11 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
   }
   block(0, floor - .10, stairStart + 3, 27, .4, 7);
   block(0, -1.55, (stairZ + 36) / 2, 24, .8, stairZ - 36 + 1);
+  const distantStairs = mergeGeometries(ramps); ramps.forEach(g => g.dispose());
+  distantStairs.userData.preserveSurface = true;
+  const stairFar = geometries.length; geometries.push(distantStairs);
+  piece(stairFar, 0, 0, 0, 1, 1, 1, 0, 0, 0, 'stairFar');
+  const stairLod = createStairLod(materials.masonry, flights);
   // Fallen voussoirs and rubble at the building's foot avoid a pristine base.
   let rubble = 0;
   for (let attempt = 0; attempt < 3400 && rubble < 340; attempt++) {
@@ -345,7 +384,7 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
     const sets = new Map();
     matrices.forEach((matrix, j) => { const finish = finishes[i][j]; if (!sets.has(finish)) sets.set(finish, []); sets.get(finish).push(matrix); });
     for (const [finish, instances] of sets) {
-      const material = finish === 'marble' ? materials.marble : finish === 'orangeMarble' ? materials.orangeMarble : finish === 'gold' ? materials.gold : details.metalGeometries.includes(i) ? bronze : i === 6 ? materials.dark : i === 7 ? materials.inlay : materials.masonry;
+      const material = finish === 'stairNear' ? stairLod.near : finish === 'stairFar' ? stairLod.far : finish === 'marble' ? materials.marble : finish === 'orangeMarble' ? materials.orangeMarble : finish === 'gold' ? materials.gold : details.metalGeometries.includes(i) ? bronze : i === 6 ? materials.dark : i === 7 ? materials.inlay : materials.masonry;
       const mesh = new InstancedMesh(geometries[i], material, instances.length); mesh.name = `Carved sanctuary / ${i} / ${finish}`;
       mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false;
       // The reflection capture cannot resolve individual small carvings.
@@ -359,6 +398,7 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
         const k = .80 + random() * .28 + pale;
         tint.setRGB(k * (1 + iron * .15), k * (1 - iron * .48), k * (1 - iron * .80));
         if (finish !== 'stone') tint.setScalar(.92 + (k - .8 - pale) * .25);
+        if (finish === 'stairNear' || finish === 'stairFar') tint.setScalar(.94);
         mesh.setColorAt(j, tint);
       });
       batches.push(mesh); group.add(mesh);
@@ -372,7 +412,7 @@ export function createArchitecture(scene, materials, surfaceAt = terrainHeight) 
   const beaconLight = new PointLight('#3cefd3', 7000, 24, 2); beaconLight.position.copy(beacon.position); beaconLight.layers.enable(1);
   scene.add(beacon, beaconLight);
   const projection = createSanctuaryProjection(scene, beacon);
-  return { group, batches, stairs, colliders, beacon, beaconLight, projection, details: details.positions, instances: records.reduce((n, a) => n + a.length, 0) + 1, triangles: batches.reduce((n, m) => n + m.count * (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3, 0) + beaconGeometry.index.count / 3,
-    dispose() { projection.dispose(); scene.remove(group, beacon, beaconLight); beaconGeometry.dispose(); beaconMaterial.dispose(); bronze.dispose(); geometries.forEach(g => g.dispose()); batches.forEach(m => m.dispose()); }
+  return { group, batches, stairs, stairLod, colliders, beacon, beaconLight, projection, details: details.positions, instances: records.reduce((n, a) => n + a.length, 0) + 1, triangles: batches.reduce((n, m) => n + m.count * (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3, 0) + beaconGeometry.index.count / 3,
+    dispose() { projection.dispose(); stairLod.dispose(); scene.remove(group, beacon, beaconLight); beaconGeometry.dispose(); beaconMaterial.dispose(); bronze.dispose(); geometries.forEach(g => g.dispose()); batches.forEach(m => m.dispose()); }
   };
 }
