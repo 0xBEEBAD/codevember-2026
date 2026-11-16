@@ -46,10 +46,18 @@ export async function checkRockContact(app = window.mirage) {
     report.contactPose = contactPose;
 
     place(-8, 109);
-    for (let i = 0; i < 600; i++) physics.update(1 / 120, 1);
-    assert(physics.position[2] > 93 && physics.position[2] < 100, 'Chassis passed through the large rendered boulder or stopped before reaching it');
-    assert(physics.speed < .1, 'Chassis does not stop against the boulder');
-    report.largeRock = { blocked: true, end: [...physics.position], speed: physics.speed, diagnostics: physics.diagnostics };
+    let blocked = false, recovered = false;
+    for (let i = 0; i < 10 * 120; i++) {
+      physics.update(1 / 120, 1);
+      assert(physics.position[2] > 93, 'Chassis passed through the large rendered boulder');
+      if (physics.position[2] < 100 && physics.speed < 1) blocked = true;
+      if (physics.recovering) { recovered = true; break; }
+    }
+    assert(blocked, 'Chassis did not stop against the boulder');
+    assert(recovered, 'An immobilized or tipped rover did not recover');
+    for (let i = 0; i < 4 * 120; i++) physics.update(1 / 120);
+    assert(!physics.recovering && physics.diagnostics.contacts === 4, 'Recovery did not restore tire contact');
+    report.largeRock = { blocked, recovered, end: [...physics.position], speed: physics.speed, diagnostics: physics.diagnostics };
   } finally {
     rover.restore(saved); app.manual = manual; app.render();
   }
