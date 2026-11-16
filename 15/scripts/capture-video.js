@@ -46,6 +46,9 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
     drive.throttle = current.throttle;
     if (current.stop) drive.throttle *= Math.min(1, Math.max(0, Math.hypot(dx, dz) - 1) / 8);
     if (current.stop && rover.position.z > -327) drive.throttle = Math.max(.55, drive.throttle);
+    // Once parked, straighten the tires instead of steering back toward a
+    // waypoint just behind the chassis after its final braking movement.
+    if (current.stop && Math.hypot(dx, dz) < 1) drive.turn = 0;
     // A short pause lets the viewer recognize the actual starting view.
     if (current.start === 'opening') drive.throttle *= ease((local / FPS - .5) / 1.4);
   }
@@ -69,9 +72,12 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
       camera.lookAt(target); camera.updateMatrixWorld(); return;
     }
     if (current.overhead) {
-      camera.up.set(0, 0, -1);
-      camera.position.copy(smoothPosition); camera.position.y += height;
-      camera.lookAt(smoothPosition); camera.updateMatrixWorld(); return;
+      // Start directly overhead, then lower the boom behind the rover. This
+      // up vector remains well-defined at the vertical starting angle.
+      camera.up.set(-Math.sin(smoothYaw), 0, -Math.cos(smoothYaw));
+      camera.position.set(Math.sin(angle) * radius, height, Math.cos(angle) * radius).add(smoothPosition);
+      camera.lookAt(smoothPosition.x, smoothPosition.y + mix(...current.aim, t), smoothPosition.z);
+      camera.updateMatrixWorld(); return;
     }
     camera.position.set(Math.sin(angle) * radius, height, Math.cos(angle) * radius).add(smoothPosition);
     // Stay in front of the threshold: the projected seal is behind this
@@ -154,7 +160,7 @@ export function createCaptureSession({ renderSize = 1536, overlays = true } = {}
       rover.restore(saved.rover); rover.tracks.clear(); rover.tracks.seedApproach(rover.physics.wheels, rover.yaw); app.dust.clear();
       app.daylight.select(saved.settings.timeOfDay); app.daylight.update(2);
       Object.assign(settings, saved.settings); navigation.controls.enabled = saved.controls;
-      navigation.setView(saved.settings.view); camera.position.copy(saved.eye); camera.quaternion.copy(saved.rotation); camera.up.copy(saved.up);
+      camera.up.copy(saved.up); navigation.setView(saved.settings.view); camera.position.copy(saved.eye); camera.quaternion.copy(saved.rotation);
       app.resize(); camera.fov = saved.fov; camera.updateProjectionMatrix();
       document.body.classList.toggle('ui-hidden', saved.ui); app.post.invalidate(); await frame(); app.render(); app.manual = saved.manual;
     }
