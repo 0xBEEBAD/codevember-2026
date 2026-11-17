@@ -68,7 +68,8 @@ export async function checkRendering(app = window.mirage) {
       for (const entry of entries) {
         assert(entry.batch, 'Geometry fell back from meshlet rendering');
         if (mainView) instances += entry.count;
-        maxOverflow = Math.max(maxOverflow, counts[1 + entry.batch.index * 2] - entry.batch.queueCapacity);
+        const used = counts[1 + entry.batch.index * 2] + (entry.batch.ditherQueue ? counts[2 + entry.batch.index * 2] : 0);
+        maxOverflow = Math.max(maxOverflow, used - entry.batch.queueCapacity);
       }
       if (mainView) visible += counts[0];
       maxOverflow = Math.max(maxOverflow, counts[0] - culling.capacity.clusters);

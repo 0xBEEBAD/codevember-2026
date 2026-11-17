@@ -29,9 +29,12 @@ export async function checkLodTransitions(app = window.mirage) {
       const entries = [...r.entries, ...[...r.staticGroups.values()].flatMap(g => g.entries)].filter(e => e.count > 0);
       let pairedInstances = 0;
       for (const entry of entries) {
-        const b = entry.batch, count = Math.min(counts[1 + b.index * 2], b.queueCapacity);
+        const b = entry.batch, near = Math.min(counts[1 + b.index * 2], b.queueCapacity);
+        if (b.ditherQueue && !entry.material.maskNode) assert(b.clusterMesh.material.maskNode === null, 'Opaque meshlet queue retained fragment discard');
+        const count = b.ditherQueue ? Math.min(counts[2 + b.index * 2], b.queueCapacity - near) : near;
         if (!count) continue;
-        const work = await queueRange(c, b.queueOffset, count), instances = new Map();
+        const start = b.ditherQueue ? b.queueOffset + b.queueCapacity - count : b.queueOffset;
+        const work = await queueRange(c, start, count), instances = new Map();
         for (let i = 0; i < work.length; i += 4) {
           const packed = work[i + 3], coverage = (packed >>> 25) & 63;
           if (!coverage) continue;

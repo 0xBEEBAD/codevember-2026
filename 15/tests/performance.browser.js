@@ -35,8 +35,10 @@ export async function measurePerformance(app = window.mirage, frames = 240) {
         const batches = new Set(entries.filter(e => e.count > 0).map(e => e.batch));
         let clusters = 0;
         for (const batch of batches) {
-          clusters += Math.min(counts[1 + batch.index * 2], batch.queueCapacity);
-          if (batch.farMaterial !== null) clusters += Math.min(counts[2 + batch.index * 2], batch.queueCapacity);
+          const near = Math.min(counts[1 + batch.index * 2], batch.queueCapacity);
+          clusters += near;
+          if (batch.ditherQueue) clusters += Math.min(counts[2 + batch.index * 2], batch.queueCapacity - near);
+          else if (batch.farMaterial !== null) clusters += Math.min(counts[2 + batch.index * 2], batch.queueCapacity);
         }
         const name = record.culling.cameraPosition.value.distanceTo(app.camera.position) < .001 ? 'main' : 'reflection';
         if (name === 'reflection' && app.post.reflectedScene.available.value === 0) continue;

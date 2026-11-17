@@ -56,8 +56,13 @@ export async function startExperiment(loading) {
     camera.updateMatrixWorld(); renderer.toneMappingExposure = settings.exposure;
     if (architecture.stairLod.update(camera, renderer.domElement.height, settings.lodDither !== false)) atmosphere.sun.shadow.needsUpdate = true;
     architecture.projection.update(time, rover);
-    const transition = settings.lodDither === false ? 0 : .2;
-    if (meshlets.lodTransition !== transition) { meshlets.lodTransition = transition; atmosphere.sun.shadow.needsUpdate = true; post.invalidate(); }
+    const transition = settings.lodDither === false ? 0 : .1;
+    if (meshlets.lodTransition !== transition) {
+      meshlets.lodTransition = transition;
+      atmosphere.sun.shadow.needsUpdate = true;
+      architecture.projection.light.shadow.needsUpdate = true;
+      post.invalidate();
+    }
     meshlets.debug = settings.meshlets; meshlets.lodThreshold = settings.lod * renderer.getPixelRatio();
     meshlets.minScreenRadius = .6 * renderer.getPixelRatio(); meshlets.coarseScreenRadius = 2 * renderer.getPixelRatio();
     materials.relief.value = settings.relief; atmosphere.update(settings, time); dust.prepare(); post.update(time, settings);

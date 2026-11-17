@@ -112,6 +112,7 @@ const COVERAGE_SHIFT = 25;
 
 const FLAG_CONE = 1;
 const FLAG_FAR = 2;
+const FLAG_DITHER = 4;
 const MAX_UNUSED_PROJECTIONS = 60;
 
 // the shared attribute of the vertex pulling geometries, the number of vertices limits the hardware draws of the visibility buffer drawing pipeline
@@ -893,7 +894,7 @@ class MeshletCulling {
 		this.lodScale = uniform( 1.0 );
 		this.lodPerspective = uniform( 1.0 );
 		this.lodThreshold = uniform( 1.0 );
-		this.lodTransition = uniform( .2 );
+		this.lodTransition = uniform( .1 );
 
 		// the radius of objects on the screen in pixels below which they are not drawn, or drawn with their simplest level
 
@@ -1174,15 +1175,19 @@ class MeshletCulling {
 
 				if ( phase === 'second' ) {
 
-					If( record.y.bitAnd( OCCLUDED ).notEqual( uint( 0 ) ).and( transition.equal( 0 ) ), () => {
+					If( record.y.bitAnd( OCCLUDED ).notEqual( uint( 0 ) ), () => {
 
-						If( clusterVisibility.element( visibilityIndex ).notEqual( lodLevel.add( 1 ) ), () => {
+						If( coarse.not(), () => {
 
-							atomicAdd( counters.element( this.occludedCounter ), 1 );
+							If( clusterVisibility.element( visibilityIndex ).notEqual( lodLevel.add( 1 ) ).and( transition.equal( 0 ) ), () => {
+
+								atomicAdd( counters.element( this.occludedCounter ), 1 );
+
+							} );
+
+							clusterVisibility.element( visibilityIndex ).assign( uint( 0 ) );
 
 						} );
-
-						clusterVisibility.element( visibilityIndex ).assign( uint( 0 ) );
 
 						Return();
 
@@ -1233,28 +1238,42 @@ class MeshletCulling {
 
 				} );
 
-				// the near or the far queue of the batch
+				// the opaque near queue, the far material queue, or the reverse-growing dither transition queue
 
 				const enqueue = () => {
 
-					const queue = select( far, uint( 1 ), uint( 0 ) );
+					const dither = uint( batchGeometry.w ).bitAnd( FLAG_DITHER ).notEqual( uint( 0 ) ).and( transition.greaterThan( 0 ) );
+					const queue = select( far.or( dither ), uint( 1 ), uint( 0 ) );
 					const queueCapacity = uint( batchObjects.w );
 					const item = atomicAdd( counters.element( batch.mul( 2 ).add( 1 ).add( queue ) ), 1 );
 
 					If( item.lessThan( queueCapacity ), () => {
 
-						workQueue.element( uint( batchObjects.z ).add( queue.mul( queueCapacity ) ).add( item ) ).assign( uvec4( local, lodTriangleStart, lodNumTriangles, chunk.bitOr( transition.shiftLeft( COVERAGE_SHIFT ) ).bitOr( select( coarse, uint( COARSE_BIT ), uint( 0 ) ) ) ) );
+						const writeIndex = select( dither, uint( batchObjects.z ).add( queueCapacity.sub( 1 ).sub( item ) ), uint( batchObjects.z ).add( queue.mul( queueCapacity ) ).add( item ) );
+
+						workQueue.element( writeIndex ).assign( uvec4( local, lodTriangleStart, lodNumTriangles, chunk.bitOr( transition.shiftLeft( COVERAGE_SHIFT ) ).bitOr( select( coarse, uint( COARSE_BIT ), uint( 0 ) ) ) ) );
 
 					} );
 
 				};
 
-				// A transitioning object's two LODs cannot share the old per-cluster
-				// visibility history. Skip its occluder prepass and conservatively
-				// draw both in phase two; normal culling resumes after the fade.
+				// A transitioning object's two LODs cannot share per-cluster visibility
+				// history or act as solid HZB occluders. Skip phase one, then test both
+				// against the solid phase-one HZB in phase two.
 				if ( phase !== 'all' ) {
 					If( transition.greaterThan( 0 ), () => {
-						if ( phase === 'second' ) If( chunkVisible, enqueue );
+						if ( phase === 'second' ) {
+							If( coarse.not(), () => {
+								clusterVisibility.element( visibilityIndex ).assign( uint( 0 ) );
+							} );
+							If( chunkVisible, () => {
+								const occluded = isOccluded( projScreenMatrix, chunkCullBounds );
+								If( occluded.not(), enqueue );
+								If( occluded.and( coarse.not() ), () => {
+									atomicAdd( counters.element( this.occludedCounter ), 1 );
+								} );
+							} );
+						}
 						Return();
 					} );
 				}
@@ -1305,11 +1324,15 @@ class MeshletCulling {
 		const createArgs = ( prepass, name ) => Fn( () => {
 
 			const batch = instanceIndex.div( 2 );
+			const queue = instanceIndex.mod( 2 );
 			const queueCapacity = rowBits( batch, 0 ).w;
+			const dither = uint( row( batch, 2 ).w ).bitAnd( FLAG_DITHER ).notEqual( uint( 0 ) ).and( queue.equal( 1 ) );
+			const nearCount = min( countersRead.element( batch.mul( 2 ).add( 1 ) ), queueCapacity );
+			const limit = select( dither, queueCapacity.sub( nearCount ), queueCapacity );
 			const base = prepass === true ? instanceIndex.mul( 4 ).add( this.prepassArgsBase ) : instanceIndex.mul( 4 );
 
 			args.element( base ).assign( uint( MESHLET_SIZE * 3 ) );
-			args.element( base.add( 1 ) ).assign( min( countersRead.element( instanceIndex.add( 1 ) ), queueCapacity ) );
+			args.element( base.add( 1 ) ).assign( min( countersRead.element( instanceIndex.add( 1 ) ), limit ) );
 			args.element( base.add( 2 ) ).assign( uint( 0 ) );
 			args.element( base.add( 3 ) ).assign( uint( 0 ) );
 
@@ -1516,7 +1539,7 @@ class MeshletCulling {
 
 		bits.set( [ this.objectEnd, 0, this.queueEnd, queueCapacity ], base );
 		bits.set( [ batch.dataOffset, 0, this.visibilityEnd, maxChunks ], base + 4 );
-		values.set( [ 0, 0, batch.lodCount, ( batch.cone === true ? FLAG_CONE : 0 ) | ( batch.farMaterial !== null ? FLAG_FAR : 0 ) ], base + 8 );
+		values.set( [ 0, 0, batch.lodCount, ( batch.cone === true ? FLAG_CONE : 0 ) | ( batch.farMaterial !== null ? FLAG_FAR : 0 ) | ( batch.ditherQueue === true ? FLAG_DITHER : 0 ) ], base + 8 );
 
 		// the batch of each slot of the range
 
@@ -2210,6 +2233,7 @@ class MeshletBatch {
 		this.materialVersion = material.version;
 		this.farMaterial = shadow === false ? farMaterial : null;
 		this.farMaterialVersion = farMaterial !== null ? farMaterial.version : - 1;
+		this.ditherQueue = this.farMaterial === null && ( clusters.lodCount > 1 || Boolean( clusters.geometry.userData.meshletFamily ) );
 		this.debug = debug;
 		this.shadow = shadow;
 		this.culling = culling;
@@ -2450,27 +2474,32 @@ class MeshletBatch {
 
 		// one draw instance per cluster of 64 triangles, the far queue follows the near queue
 
-		const createSource = ( queue ) => {
+		const createSource = ( queue, dither = false ) => {
 
-			const workItem = workQueue.element( queue === 0 ? drawInstanceIndex : drawInstanceIndex.add( maxWorkItems.mul( queue ) ) );
+			const index = dither === true
+				? maxWorkItems.sub( 1 ).sub( drawInstanceIndex )
+				: ( queue === 0 ? drawInstanceIndex : drawInstanceIndex.add( maxWorkItems.mul( queue ) ) );
+			const workItem = workQueue.element( index );
 
 			return {
 				instance: workItem.x,
 				triangle: workItem.y.add( workItem.w.bitAnd( CHUNK_MASK ).mul( MESHLET_SIZE ) ).add( vertexIndex.div( 3 ) ),
 				corner: vertexIndex.mod( 3 ),
-				lodTransition: workItem.w
+				lodTransition: workItem.w,
+				dither
 			};
 
 		};
 
-		const clusterSource = createSource( 0 );
-		const farClusterSource = this.farMaterial !== null ? createSource( 1 ) : null;
+		const clusterSource = createSource( 0, false );
+		const farClusterSource = this.farMaterial !== null ? createSource( 1, false ) : null;
+		const ditherClusterSource = this.ditherQueue === true ? createSource( 1, true ) : null;
 
 		const shared = {
 			createAttribute, clusters, material, renderer, receiveShadow, debug, shadow, depthPrepass, capacity,
 			position, normal, vertexUv, hasAttribute, attribute, indexBuffer, instanceWorld, instanceMvp, instanced: gpuTransform, objectWorld, instanceLocal, instanceData,
 			workQueue, workQueueCountRead, maxWorkItems, projScreenMatrix: culling.projScreenMatrix, viewSize: culling.viewSize,
-			clusterSource, farClusterSource
+			clusterSource, farClusterSource, ditherClusterSource
 		};
 
 		this.setupDraw( shared );
@@ -2547,17 +2576,20 @@ class MeshletBatch {
 	 */
 	setupDraw( shared ) {
 
-		const { clusterSource, farClusterSource } = shared;
+		const { clusterSource, farClusterSource, ditherClusterSource } = shared;
 
-		// one draw per queue: the material, and the far material beyond the switch distance
+		// one draw per queue: the opaque material, and either the far material or the dithered transition clusters
 
-		const queues = [ { source: clusterSource, material: shared.material } ];
+		const queues = [ { source: clusterSource, material: shared.material, dither: false } ];
 
-		if ( farClusterSource !== null ) queues.push( { source: farClusterSource, material: this.farMaterial } );
+		if ( farClusterSource !== null ) queues.push( { source: farClusterSource, material: this.farMaterial, dither: false } );
+		if ( ditherClusterSource !== null ) queues.push( { source: ditherClusterSource, material: shared.material, dither: true } );
 
 		for ( let queue = 0; queue < queues.length; queue ++ ) {
 
 			const mesh = this.createPulledMesh( this.culling.argsAttribute, queues[ queue ].source, { ...shared, material: queues[ queue ].material }, this.getArgsOffset( queue ) );
+
+			if ( queues[ queue ].dither === true ) mesh.renderOrder = 1;
 
 			this.meshes.push( mesh );
 
@@ -2708,9 +2740,8 @@ class MeshletBatch {
 
 		// Complementary masks use the same pixel threshold for both surfaces.
 		// No time-varying seed: a stationary camera and SSGI history stay stable.
-		// Fixed terrain and single-level geometry need no fragment discard. Keep
-		// their early depth tests; family batches may contain other geometries.
-		if ( clusters.lodCount === 1 && ! clusters.geometry.userData.meshletFamily ) {
+		// Opaque queues have no fragment discard, preserving early depth / HSR.
+		if ( source.dither === false ) {
 			return { context, positionNode, colorNode, maskNode: null };
 		}
 		const transition = varying( source.lodTransition, 'vMeshletLodTransition' );
@@ -3405,7 +3436,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
 		 * @default 1
 		 */
 		this.lodThreshold = lodThreshold;
-		this.lodTransition = .2;
+		this.lodTransition = .1;
 
 		/**
 		 * The projected error in shadow map texels below which a simpler level of detail is selected for the
@@ -4861,6 +4892,8 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
 
 			for ( const mesh of batch.meshes ) {
 
+				if ( mesh.renderOrder === 1 && this.lodTransition === 0 ) continue;
+
 				super.pushRenderItem( renderList, mesh, mesh.geometry, mesh.material, entry.groupOrder, entry.z, null, entry.clippingContext );
 
 			}
@@ -4913,9 +4946,15 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
 
 			for ( const [ entry, batch, index, queueCapacity ] of batches ) {
 
-				const visible = Math.max( counters[ 1 + index * 2 ], batch.farMaterial !== null ? counters[ 2 + index * 2 ] : 0 );
+				const ditherVisible = batch.ditherQueue === true ? counters[ 2 + index * 2 ] : 0;
+				const visible = batch.ditherQueue === true
+					? counters[ 1 + index * 2 ] + ditherVisible
+					: Math.max( counters[ 1 + index * 2 ], batch.farMaterial !== null ? counters[ 2 + index * 2 ] : 0 );
 
-				drawn += Math.min( counters[ 1 + index * 2 ], queueCapacity ) + ( batch.farMaterial !== null ? Math.min( counters[ 2 + index * 2 ], queueCapacity ) : 0 );
+				const nearDrawn = Math.min( counters[ 1 + index * 2 ], queueCapacity );
+				drawn += nearDrawn + ( batch.ditherQueue === true
+					? Math.min( ditherVisible, queueCapacity - nearDrawn )
+					: ( batch.farMaterial !== null ? Math.min( counters[ 2 + index * 2 ], queueCapacity ) : 0 ) );
 
 				if ( visible > queueCapacity ) {
 
