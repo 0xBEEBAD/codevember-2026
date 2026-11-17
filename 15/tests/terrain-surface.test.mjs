@@ -12,6 +12,8 @@ test('talus relaxation spreads steep deposits without changing a flat bed', () =
   assert.ok(Math.abs(mass - 200) < .001);
   assert.ok(Math.max(...relaxed) < 10 && relaxed.every(h => h >= 0));
   assert.ok(relaxed.filter(h => h > .01).length > 100);
+  const sunken = new Float32Array(size * size).fill(-20); sunken[32 * size + 32] = 0;
+  assert.ok(relaxTerrain(sunken, size, 1, 1)[32 * size + 32] < -10);
 });
 
 test('heightfield interpolation preserves a plane and continuous slopes at cell boundaries', () => {
