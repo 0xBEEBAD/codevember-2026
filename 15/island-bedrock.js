@@ -1,5 +1,5 @@
 import { BoxGeometry, Float32BufferAttribute } from 'three/webgpu';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices } from './vendor/mergeVertices.js';
 import { noise, smoothstep } from './noise.js';
 import { sampleSediment } from './rock-geometry.js';
 import { bakeCurvature } from './curvature.js';
