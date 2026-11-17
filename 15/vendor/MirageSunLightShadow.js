@@ -1,4 +1,4 @@
-// Three.js MIT, pinned at 6281ce3fd4c3e8c4b4b204dd5a942f77ab313f6f.
+// Three.js MIT, pinned at 4f5d6bc0c7ec777e06703b56c7b7089e99be11d5.
 // Local change: expose the practical split weight for close rover shadows.
 import {
 	Frustum,

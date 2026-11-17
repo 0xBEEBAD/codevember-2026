@@ -37,7 +37,7 @@ Settings expose lighting, GI, clouds, dust, heat distortion, surface relief, ren
 
 ## Rendering
 
-Three.js WebGPURenderer and TSL are pinned to [commit 6281ce3](https://github.com/mrdoob/three.js/commit/6281ce3fd4c3e8c4b4b204dd5a942f77ab313f6f). Local extensions add meshlet LOD dithering, bounded GPU queue allocations, shared cloud transmission and cascade-scaled shadow bias.
+Three.js WebGPURenderer and TSL are pinned to [commit 4f5d6bc](https://github.com/mrdoob/three.js/commit/4f5d6bc0c7ec777e06703b56c7b7089e99be11d5). Local extensions add meshlet LOD dithering, bounded GPU queue allocations, shared cloud transmission and cascade-scaled shadow bias.
 
 - **Geology:** 32 seeded rock variants, fractured faces, irregular sediment beds, subtractive weathering and multiscale erosion. Baked signed curvature reveals exposed edges and sheltered hollows. Triplanar mineral textures, strata, altitude and correlated instance colors produce orange/brown sandstone variation. Sanctuary foundations interlock with smaller rock clusters and rubble.
 - **Landscape:** detailed nearby dunes join progressively coarser terrain rings extending 200 km in every direction. Distant ranges use connected ridges and saddles. A seeded heightfield redistributes steep deposits into neighboring slopes, with bicubic reconstruction for continuous gradients. This is a procedural talus approximation, not a geological simulation. Tessellation is concentrated in the background ranges instead of empty plains. Terrain rings explicitly stitch every boundary vertex, including when tessellation decreases; collision queries follow those same triangles. Filtered world-space sand gradients avoid grazing-angle bump bands.
@@ -48,7 +48,7 @@ Three.js WebGPURenderer and TSL are pinned to [commit 6281ce3](https://github.co
 - **Mirage:** a planar Reflector captures off-screen objects and sky. A grazing-angle mask, stable basin plane and hot-ground strength produce an inferior mirage. Reflection and dust are composited before shared heat distortion, with foreground and silhouette guards. This is an artistic planar approximation, not a numerical curved-ray solution or thermal-history simulation.
 - **Dust:** procedural soft sprites form drifting wisps across 16 anchored regions and camera-local sand, plus contact-driven tire spray. A bounded 1,024-particle pool samples terrain, scene depth, sunlight, cloud transmission and sky fill. Particles soften against opaque geometry and are composited after GI. They do not cast shadows or simulate a volumetric fluid.
 
-The scene has 8,465 rock instances, 8,859 masonry instances and roughly 181 million source triangles when full-detail geometry is multiplied by instance count. Those are scene totals, **not triangles drawn per frame**. Meshlets select LODs, cull clusters and reuse static transforms. Complementary dither masks crossfade neighboring LODs across beauty, reflection and shadow passes. The Rendering settings can disable transitions to reduce their cost.
+The scene has 8,465 rock instances, 8,859 masonry instances and roughly 181 million source triangles when full-detail geometry is multiplied by instance count. Those are scene totals, **not triangles drawn per frame**. Meshlets select LODs from bounding-sphere surface distance, cull clusters and reuse static transforms. Complementary dither masks crossfade neighboring LODs across beauty, reflection and shadow passes. The Rendering settings can disable transitions to reduce their cost.
 
 ## Rover
 
