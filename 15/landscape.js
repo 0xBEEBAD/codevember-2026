@@ -10,9 +10,13 @@ export async function createLandscape(scene, materials, reportProgress = () => {
   const group = new BundleGroup(); group.name = 'Eroded sandstone canyon';
   const random = randomSeed(151515), dummy = new Object3D(), variants = [], transforms = [], batches = [], obstacles = [], collisionGeometry = [], smallCollisionGeometry = [];
   const specs = [...Array.from({ length: 8 }, () => ['cliff', 112]), ...Array.from({ length: 8 }, () => ['boulder', 64]), ...Array.from({ length: 4 }, () => ['scree', 20]), ...Array.from({ length: 4 }, () => ['shelf', 80]), ...Array.from({ length: 8 }, () => ['distant', 16])];
+  let lastYield = performance.now();
   for (let i = 0; i < specs.length; i++) {
     reportProgress(i / specs.length * .35, `Eroding sandstone · ${i + 1} / ${specs.length}`);
-    await new Promise(requestAnimationFrame);
+    if (performance.now() - lastYield > 12) {
+      await new Promise(requestAnimationFrame);
+      lastYield = performance.now();
+    }
     variants.push(createRockGeometry(151 + i * 7919, ...specs[i])); transforms.push([]);
     materials.registerRock(variants[i], i);
     collisionGeometry.push(i < 24 ? createRockGeometry(151 + i * 7919, specs[i][0], 24) : null);
