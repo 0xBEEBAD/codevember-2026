@@ -2,7 +2,9 @@
 
 An endless flight through a snowbound hedge maze at night, inspired by *The Shining*. Snow-covered yew, recessed footprints, blue floodlights, blowing powder, fog, and an evolving orchestral score are generated in code.
 
-Built with plain JavaScript, Three.js `WebGPURenderer`, TSL, `MeshletDrawingPipeline`, and `ClusteredLighting`. WebGPU is required. Dependencies load through an import map pinned to the same Three.js revision as Day 12. There is no install or build step.
+Built with plain JavaScript, Three.js `WebGPURenderer`, TSL, `MeshletDrawingPipeline`, and `ClusteredLighting`. WebGPU is required. Dependencies load through an import map pinned to [Three.js commit `4f5d6bc`](https://github.com/mrdoob/three.js/commit/4f5d6bc0c7ec777e06703b56c7b7089e99be11d5) via jsDelivr, matching Day 12. There is no install or build step.
+
+The GUI module uses jsDelivr's Fastly endpoint at the same commit because the default CDN endpoint returns a package-size error for that file.
 
 ## Run
 
