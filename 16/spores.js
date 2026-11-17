@@ -9,7 +9,7 @@ import { createAirField } from './air-field.js';
 export function createSpores(maxCount=4194304,lighting=null) {
   const positions=instancedArray(maxCount,'vec4');
   const velocities=instancedArray(maxCount,'vec4');
-  const clock=uniform(0),delta=uniform(1/60),wind=uniform(1),brightness=uniform(3.0);
+  const clock=uniform(0),delta=uniform(1/60),wind=uniform(1),brightness=uniform(4);
   const diffusionStep=uniform(0,'uint');
   // Shared light uniforms keep particle illumination aligned with tissue SSS.
   const keyColor=lighting?.keyColor??uniform(new THREE.Color('#ffbd99'));

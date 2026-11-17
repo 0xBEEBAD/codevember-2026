@@ -26,6 +26,35 @@ function leafGeometry(seed) {
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g.setAttribute('pigment',new THREE.Float32BufferAttribute(c,3));g.setAttribute('leafSurface',new THREE.Float32BufferAttribute(surface,2));g.setIndex(ix);g.computeVertexNormals();return g;
 }
 
+// Keep the whole fallen leaf clear of the curved stipes. Its bounding sphere
+// is conservative, so triangles cannot pierce a stem between sampled vertices.
+function placeLeafClearOfStems(leaf){
+  leaf.geometry.computeBoundingSphere();
+  const local=leaf.geometry.boundingSphere,center=new THREE.Vector3();
+  const radius=local.radius*leaf.scale.x;
+  for(let attempt=0;attempt<32;attempt++){
+    leaf.updateMatrix();center.copy(local.center).applyMatrix4(leaf.matrix);
+    let overlap=null;
+    for(const m of MUSHROOMS){
+      if(center.y-radius>m.h||center.y+radius<-.1)continue;
+      // Include the bend over the leaf's height as well as the stem radius.
+      const low=Math.max(0,(center.y-radius-.03)/m.h),high=Math.min(1,(center.y+radius+.03)/(m.h-m.r*.1));
+      for(let j=0;j<=8;j++){
+        const u=low+(high-low)*j/8,x=m.x+m.bend*u*u+Math.sin(u*Math.PI)*.027,z=m.z+Math.sin(u*Math.PI)*.035;
+        const dx=center.x-x,dz=center.z-z,d=Math.hypot(dx,dz),clearance=radius+stemRadius(m,u)*1.025+.02;
+        if(d<clearance){overlap={dx:dx||.001,dz,d,clearance};break;}
+      }
+      if(overlap)break;
+    }
+    if(!overlap)return true;
+    const {dx,dz,d,clearance}=overlap,amount=(clearance-d+.01)/Math.max(d,.001);
+    const oldGround=groundHeight(leaf.position.x,leaf.position.z);
+    leaf.position.x+=dx*amount;leaf.position.z+=dz*amount;
+    leaf.position.y+=groundHeight(leaf.position.x,leaf.position.z)-oldGround;
+  }
+  return false;
+}
+
 export async function createForest(materials) {
   await mossLODReady;
   const group=new THREE.Group();group.name='Forest floor';
@@ -101,7 +130,9 @@ export async function createForest(materials) {
     const a=random()*Math.PI*2,r=.75+random()*2.2,x=Math.cos(a)*r,z=Math.sin(a)*r;
     const leaf=new THREE.Mesh(leafGeometry(i+931),materials.leaf);
     leaf.position.set(x,groundHeight(x,z)+.06,z);leaf.rotation.set((random()-.5)*.6,random()*Math.PI*2,(random()-.5)*.8);
-    leaf.scale.setScalar(.16+random()*.20);leaf.updateMatrix();
+    leaf.scale.setScalar(.16+random()*.20);
+    if(!placeLeafClearOfStems(leaf)){leaf.geometry.dispose();continue;}
+    leaf.updateMatrix();
     litter.push(leaf.geometry.applyMatrix4(leaf.matrix));
   }
   const litterMesh=new THREE.Mesh(mergeGeometries(litter),materials.leaf);

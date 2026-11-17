@@ -21,6 +21,8 @@ for pattern in ('*.js', '*.html', '*.css'):
         shutil.copy2(path, snapshot / path.name)
 if (project / 'licenses').exists():
     shutil.copytree(project / 'licenses', snapshot / 'licenses', dirs_exist_ok=True)
+shutil.copytree(project / 'scripts', snapshot / 'scripts',
+                ignore=shutil.ignore_patterns('__pycache__'), dirs_exist_ok=True)
 steps.append({'step': number, 'file': target.name, 'note': label,
               'capturedAt': datetime.now(timezone.utc).isoformat()})
 manifest.write_text(json.dumps(steps, indent=2) + '\n')

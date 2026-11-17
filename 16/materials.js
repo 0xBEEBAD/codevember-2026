@@ -149,7 +149,7 @@ export function createMaterials() {
   stem.emissiveNode=stem.emissiveNode.mul(dirt.mul(.92).oneMinus());
   stem.volumeTransportNode=stem.volumeTransportNode.mul(dirt.mul(.90).oneMinus());
   const gillHeart=tissue.x.smoothstep(.16,.78).oneMinus().pow(1.6);
-  gills.emissiveNode=gills.emissiveNode.add(mix(color('#ffb438'),color('#ff913b'),blush.mul(.55)).mul(gillHeart).mul(tissue.z.mul(.45).add(.55)).mul(glow).mul(1.8));
+  gills.emissiveNode=gills.emissiveNode.add(mix(color('#ffb438'),color('#ff913b'),blush.mul(.55)).mul(gillHeart).mul(tissue.z.mul(.45).add(.55)).mul(glow).mul(4));
   moss.envMap=reflectionEnvironment;moss.envMapIntensity=.35;
   moss.groveIrradianceNode=groveLight;
   const growing=attribute('plant','vec3').x;
