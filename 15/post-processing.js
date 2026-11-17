@@ -8,7 +8,7 @@ import { createMirageReflector } from './mirage-reflector.js';
 
 export function createPostProcessing(renderer, scene, camera, atmosphere, dust) {
   const reflectedScene = createMirageReflector(renderer, scene, camera, atmosphere);
-  const scenePass = pass(scene, camera, { samples: 4 });
+  const scenePass = pass(scene, camera, { samples: 4, storeMultisampledColorBuffer: false });
   const beauty = scenePass.getTextureNode('output'), depth = scenePass.getTextureNode('depth');
   dust.connectDepth(depth);
   const dustPass = pass(dust.scene, camera, { samples: 0, depthBuffer: false });

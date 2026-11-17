@@ -9,6 +9,7 @@ export function createMirageReflector(renderer, scene, camera, atmosphere) {
   reflection.target.rotation.x = -Math.PI / 2; scene.add(reflection.target);
   const captureCamera = camera.clone();
   const virtual = reflection.reflector.getVirtualCamera(captureCamera); virtual.layers.set(1);
+  reflection.reflector.getRenderTarget(virtual).storeMultisampledColorBuffer = false;
   const inverse = uniform(virtual.projectionMatrixInverse), worldMatrix = uniform(virtual.matrixWorld);
   const projection = uniform(virtual.projectionMatrix), viewMatrix = uniform(virtual.matrixWorldInverse);
   const available = uniform(0), holder = new MeshBasicNodeMaterial();
