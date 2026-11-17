@@ -15,12 +15,18 @@ function hash(x, y, z) {
   h = Math.imul(h ^ h >>> 16, 2246822519);
   return ((h ^ h >>> 13) >>> 0) / 4294967295;
 }
+const mix = (p, q, t) => p + (q - p) * t;
 export function noise(x, y, z) {
   const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
-  let a = x - ix, b = y - iy, c = z - iz;
-  a = a * a * (3 - 2 * a); b = b * b * (3 - 2 * b); c = c * c * (3 - 2 * c);
-  const mix = (p, q, t) => p + (q - p) * t;
-  return mix(mix(mix(hash(ix, iy, iz), hash(ix + 1, iy, iz), a), mix(hash(ix, iy + 1, iz), hash(ix + 1, iy + 1, iz), a), b), mix(mix(hash(ix, iy, iz + 1), hash(ix + 1, iy, iz + 1), a), mix(hash(ix, iy + 1, iz + 1), hash(ix + 1, iy + 1, iz + 1), a), b), c) * 2 - 1;
+  let a = x - ix, c = z - iz;
+  a = a * a * (3 - 2 * a); c = c * c * (3 - 2 * c);
+  const x00 = mix(hash(ix, iy, iz), hash(ix + 1, iy, iz), a);
+  const x01 = mix(hash(ix, iy, iz + 1), hash(ix + 1, iy, iz + 1), a);
+  if (y === iy) return mix(x00, x01, c) * 2 - 1;
+  let b = y - iy; b = b * b * (3 - 2 * b);
+  const x10 = mix(hash(ix, iy + 1, iz), hash(ix + 1, iy + 1, iz), a);
+  const x11 = mix(hash(ix, iy + 1, iz + 1), hash(ix + 1, iy + 1, iz + 1), a);
+  return mix(mix(x00, x10, b), mix(x01, x11, b), c) * 2 - 1;
 }
 export function fbm(x, y, z, octaves = 4) {
   let v = 0, a = .5;
@@ -47,23 +53,27 @@ export const mountainRanges = [
 // Triangular-lattice gradient noise avoids the rectangular ridges produced
 // by taking the absolute value of a square-grid value-noise field.
 const mountainGradients = [[1, 1], [-1, 1], [1, -1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]];
+function mountainCorner(a, b, u, v, seed) {
+  const falloff = .5 - u * u - v * v;
+  if (falloff <= 0) return 0;
+  const g = mountainGradients[Math.min(7, Math.floor(hash(a, seed, b) * 8))], f2 = falloff * falloff;
+  return f2 * f2 * (g[0] * u + g[1] * v);
+}
 function mountainNoise(x, z, seed) {
   const skew = (x + z) * .3660254037844386, i = Math.floor(x + skew), j = Math.floor(z + skew);
   const unskew = (i + j) * .21132486540518713, dx = x - i + unskew, dz = z - j + unskew;
   const ix = dx > dz ? 1 : 0, iz = 1 - ix;
-  function corner(a, b, u, v) {
-    const falloff = .5 - u * u - v * v;
-    if (falloff <= 0) return 0;
-    const g = mountainGradients[Math.min(7, Math.floor(hash(a, seed, b) * 8))];
-    return falloff ** 4 * (g[0] * u + g[1] * v);
-  }
-  return clamp(70 * (corner(i, j, dx, dz)
-    + corner(i + ix, j + iz, dx - ix + .21132486540518713, dz - iz + .21132486540518713)
-    + corner(i + 1, j + 1, dx - .5773502691896257, dz - .5773502691896257)), -1, 1);
+  return clamp(70 * (mountainCorner(i, j, dx, dz, seed)
+    + mountainCorner(i + ix, j + iz, dx - ix + .21132486540518713, dz - iz + .21132486540518713, seed)
+    + mountainCorner(i + 1, j + 1, dx - .5773502691896257, dz - .5773502691896257, seed)), -1, 1);
 }
-const rangeFields = new Map(), RANGE_SIZE = 257;
+// A rounded absolute value keeps ridge slopes continuous. In particular,
+// no cusp can flip a normal between two coarse terrain-ring samples.
+const ridge = value => (1 - Math.sqrt(value * value + .012)) ** 2;
+const rangeFields = new Array(mountainRanges.length).fill(null), RANGE_SIZE = 257;
 function rangeField(range) {
-  if (rangeFields.has(range)) return rangeFields.get(range);
+  const cached = rangeFields[range];
+  if (cached !== null) return cached;
   const [, , rx, rz, height] = mountainRanges[range];
   const field = new Float32Array(RANGE_SIZE * RANGE_SIZE), seed = 137 + range * 23;
   // Connected, branching drainage divides rather than products of periodic
@@ -75,9 +85,6 @@ function rangeField(range) {
     const wx = dx + mountainNoise(dx * 1.3, dz * 1.3, seed) * .16;
     const wz = dz + mountainNoise(dx * 1.1, dz * 1.1, seed + 7) * .13;
     const u = wx * 3.4 + wz * 1.1, v = wz * 2.7 - wx * .6;
-    // A rounded absolute value keeps ridge slopes continuous. In particular,
-    // no cusp can flip a normal between two coarse terrain-ring samples.
-    const ridge = value => (1 - Math.sqrt(value * value + .012)) ** 2;
     const spine = ridge(mountainNoise(u, v, seed + 11));
     const foothill = ridge(mountainNoise(u * 2.07 + 17, v * 2.07 - 9, seed + 29));
     const folded = ridge(mountainNoise(u * 4.13 - 5, v * 4.13 + 23, seed + 47));
@@ -87,45 +94,54 @@ function rangeField(range) {
     field[z * RANGE_SIZE + x] = envelope * relief * height * 1.35 * edge;
   }
   const relaxed = relaxTerrain(field, RANGE_SIZE, 4 * rx / (RANGE_SIZE - 1), 4 * rz / (RANGE_SIZE - 1));
-  rangeFields.set(range, relaxed); return relaxed;
+  rangeFields[range] = relaxed; return relaxed;
 }
 function mountainHeight(x, z) {
   if (z > -1800) return 0;
-  let elevation = 0;
+  let sum4 = 0;
   for (let range = 0; range < mountainRanges.length; range++) {
-    const [cx, cz, rx, rz] = mountainRanges[range];
-    const dx = (x - cx) / rx, dz = (z - cz) / rz;
-    if (Math.abs(dx) >= 2 || Math.abs(dz) >= 2) continue;
+    const r = mountainRanges[range];
+    const dx = (x - r[0]) / r[2];
+    if (dx <= -2 || dx >= 2) continue;
+    const dz = (z - r[1]) / r[3];
+    if (dz <= -2 || dz >= 2) continue;
     const h = sampleTerrain(rangeField(range), RANGE_SIZE, (dx + 2) * .25 * (RANGE_SIZE - 1), (dz + 2) * .25 * (RANGE_SIZE - 1));
     // Smooth union preserves a continuous grade where neighbouring ranges
     // meet, instead of leaving a crease through the saddle.
-    elevation = (elevation ** 4 + h ** 4) ** .25;
+    const h2 = h * h;
+    sum4 += h2 * h2;
   }
-  return smoothstep(1800, 5400, -z) * elevation;
+  return sum4 > 0 ? smoothstep(1800, 5400, -z) * Math.sqrt(Math.sqrt(sum4)) : 0;
 }
 
 export function terrainHeight(x, z) {
+  const uplands = mountainHeight(x, z);
+  const exposedRock = uplands <= 120 ? 0 : uplands >= 450 ? 1 : smoothstep(120, 450, uplands);
+  if (exposedRock === 1) return uplands;
+  // A dry, almost level basin carries the inverted image beneath the city.
+  const width = canyonWidth(z), offset = Math.abs(x - canyonCenter(z));
+  let basin = 0;
+  if (z > -1050 && z < 130 && offset < width * .9) {
+    basin = (1 - smoothstep(width * .57, width * .9, offset)) * smoothstep(-1050, -750, z) * (1 - smoothstep(35, 130, z));
+    if (basin === 1) return -1.4 + noise(x * .035, 29, z * .035) * .025 + uplands;
+  }
   // Windward ramps climb slowly toward a sinuous crest; the short lee side
   // falls at the angle of repose. Broad wavelengths keep whole dune faces
   // readable at the sanctuary's scale instead of becoming small rolling bumps.
   const warp = noise(x * .0025, 3, z * .003) * 90 + Math.sin(z * .009) * 24;
   // Broader sand seas in the distance stay resolved by the terrain rings;
   // retaining the near basin's 270 m dunes there produced faceted ripples.
-  const wavelength = 270 + 730 * smoothstep(1500, 7000, Math.hypot(x, z));
+  const r2 = x * x + z * z;
+  const wavelength = r2 <= 1500 * 1500 ? 270 : r2 >= 7000 * 7000 ? 1000 : 270 + 730 * smoothstep(1500, 7000, Math.sqrt(r2));
   const cycle = (x + z * .58 + warp) / wavelength;
   const phase = cycle - Math.floor(cycle), crest = .77;
   const ramp = phase < crest ? smoothstep(0, crest, phase) : 1 - smoothstep(crest, 1, phase);
   const dunes = ramp * (32 + 10 * noise(x * .0015, 4, z * .0017));
-  const shoulder = smoothstep(canyonWidth(z) - 30, canyonWidth(z) + 16, Math.abs(x - canyonCenter(z)));
-  const talus = shoulder * (12 + noise(z * .017, 23, x * .009) * 5);
+  const shoulder = smoothstep(width - 30, width + 16, offset);
+  const talus = shoulder > 0 ? shoulder * (12 + noise(z * .017, 23, x * .009) * 5) : 0;
   const sculpted = dunes + fbm(x * .009, 17, z * .009, 3) * 1.5 - 3.5 + talus;
-  // A dry, almost level basin carries the inverted image beneath the city.
-  const across = 1 - smoothstep(canyonWidth(z) * .57, canyonWidth(z) * .9, Math.abs(x - canyonCenter(z)));
-  const along = smoothstep(-1050, -750, z) * (1 - smoothstep(35, 130, z));
-  const basin = across * along;
-  const uplands = mountainHeight(x, z);
-  const exposedRock = smoothstep(120, 450, uplands);
-  return sculpted * (1 - basin) * (1 - exposedRock) + (-1.4 + noise(x * .035, 29, z * .035) * .025) * basin + uplands;
+  const floor = basin > 0 ? (-1.4 + noise(x * .035, 29, z * .035) * .025) * basin : 0;
+  return sculpted * (1 - basin) * (1 - exposedRock) + floor + uplands;
 }
 
 export function canyonCenter(z) { return Math.sin(z * .007) * 21 + Math.sin(z * .019) * 5; }
