@@ -292,6 +292,7 @@ export async function createLandscape(scene, materials, reportProgress = () => {
   }
   scene.add(reflectionGroup);
   reportProgress(.5, 'Sculpting the dunes…'); await new Promise(requestAnimationFrame);
+  lastYield = performance.now();
   const terrain = new PlaneGeometry(1700, 1900, 420, 470); terrain.rotateX(-Math.PI / 2); terrain.translate(0, 0, -520);
   const p = terrain.attributes.position;
   for (let i = 0; i < p.count; i++) p.setY(i, terrainHeight(p.getX(i), p.getZ(i)));
@@ -304,7 +305,11 @@ export async function createLandscape(scene, materials, reportProgress = () => {
   const distanceTerrain = [];
   let innerX = 850, innerZ = 950;
   for (const outer of [1700, 3200, 6000, 11000, 19000, 31000, 50000, 80000, 125000, 200000]) {
-    reportProgress(.55 + distanceTerrain.length * .04, 'Extending the horizon…'); await new Promise(requestAnimationFrame);
+    reportProgress(.55 + distanceTerrain.length * .04, 'Extending the horizon…');
+    if (performance.now() - lastYield > 12) {
+      await new Promise(requestAnimationFrame);
+      lastYield = performance.now();
+    }
     // Concentrate vertices in the northern ranges. Uniform resolution spent
     // most of the memory on empty plains while leaving distant crests faceted.
     // All four sides retain identical radial rows to meet without corner gaps.
@@ -349,21 +354,39 @@ export async function createLandscape(scene, materials, reportProgress = () => {
       const stitch = stitchTerrainEdge(inner, outerRow);
       indices.push(...stitch.triangles); stitches.push(stitch.bins);
     }
-    const geometry = new BufferGeometry(); geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3)); geometry.setIndex(indices); geometry.computeVertexNormals();
+    const geometry = new BufferGeometry();
+    const positionAttribute = new Float32BufferAttribute(vertices, 3);
+    const normalAttribute = new Float32BufferAttribute(vertices.length, 3);
+    const positions = positionAttribute.array, normals = normalAttribute.array;
+    geometry.setAttribute('position', positionAttribute);
+    geometry.setAttribute('normal', normalAttribute);
+    geometry.setIndex(indices);
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i] * 3, b = indices[i + 1] * 3, c = indices[i + 2] * 3;
+      if (positions[a + 2] <= -1800 && positions[b + 2] <= -1800 && positions[c + 2] <= -1800) continue;
+      const cbx = positions[c] - positions[b], cby = positions[c + 1] - positions[b + 1], cbz = positions[c + 2] - positions[b + 2];
+      const abx = positions[a] - positions[b], aby = positions[a + 1] - positions[b + 1], abz = positions[a + 2] - positions[b + 2];
+      const nx = cby * abz - cbz * aby, ny = cbz * abx - cbx * abz, nz = cbx * aby - cby * abx;
+      normals[a] += nx; normals[a + 1] += ny; normals[a + 2] += nz;
+      normals[b] += nx; normals[b + 1] += ny; normals[b + 2] += nz;
+      normals[c] += nx; normals[c + 1] += ny; normals[c + 2] += nz;
+    }
     // Sample the heightfield's slope directly. Averaging the normals of long
     // ring triangles stamped a repeating sawtooth pattern along every ridge.
-    const normals = geometry.attributes.normal, positions = geometry.attributes.position;
-    for (let i = 0; i < positions.count; i++) {
-      const x = positions.getX(i), z = positions.getZ(i);
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i], z = positions[i + 2];
       if (z > -1800) {
-        if (normals.getY(i) === 0) normals.setXYZ(i, 0, 1, 0);
+        const nx = normals[i], ny = normals[i + 1], nz = normals[i + 2];
+        const length = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        if (length === 0 || ny === 0) { normals[i] = 0; normals[i + 1] = 1; normals[i + 2] = 0; }
+        else { normals[i] = nx / length; normals[i + 1] = ny / length; normals[i + 2] = nz / length; }
         continue;
       }
-      const step = 8; // Identical gradients on both sides of a stitched boundary.
+      const step = 8, twoStep = step * 2; // Identical gradients on both sides of a stitched boundary.
       const dx = terrainHeight(x - step, z) - terrainHeight(x + step, z);
       const dz = terrainHeight(x, z - step) - terrainHeight(x, z + step);
-      const length = Math.hypot(dx, step * 2, dz);
-      normals.setXYZ(i, dx / length, step * 2 / length, dz / length);
+      const length = Math.sqrt(dx * dx + twoStep * twoStep + dz * dz);
+      normals[i] = dx / length; normals[i + 1] = twoStep / length; normals[i + 2] = dz / length;
     }
     geometry.userData.preserveSurface = true;
     const mesh = new Mesh(geometry, materials.sand); mesh.name = `Distant terrain / ${outer} m`; group.add(mesh); distanceTerrain.push(mesh);
