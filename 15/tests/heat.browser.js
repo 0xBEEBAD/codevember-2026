@@ -42,14 +42,17 @@ export async function checkHeat(app = window.mirage) {
     }
     // Heat must also move the reflected image, not just the opaque backdrop.
     // Compare the actual pre/post-refraction buffers at reflective sand pixels.
-    navigation.setView('Dunes'); Object.assign(settings, { dust: 0, wheelDust: 0, mirage: 1 });
+    navigation.setView('Dunes'); Object.assign(settings, { dust: 0, wheelDust: 0, mirage: 0, heat: 0 });
     const read = async node => {
       const rt = node.renderTarget;
       return Float32Array.from(await renderer.readRenderTargetPixelsAsync(rt, 0, 0, rt.width, rt.height), DataUtils.fromHalfFloat);
     };
+    for (let i = 0; i < 8; i++) { await new Promise(requestAnimationFrame); app.render(); }
+    const base = await read(post.reflectionImage);
+    settings.mirage = 1;
     for (const strength of [0, 3]) {
       settings.heat = strength; await new Promise(requestAnimationFrame); app.render();
-      const base = await read(post.composite), reflected = await read(post.reflectionImage), refracted = await read(post.mirageImage);
+      const reflected = await read(post.reflectionImage), refracted = await read(post.mirageImage);
       let reflective = 0, moved = 0, maxDifference = 0;
       for (let i = 0; i < base.length; i += 16) {
         const reflectionDifference = Math.max(...[0, 1, 2].map(c => Math.abs(base[i + c] - reflected[i + c])));

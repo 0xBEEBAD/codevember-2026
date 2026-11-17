@@ -103,9 +103,8 @@ export function createPostProcessing(renderer, scene, camera, atmosphere, dust) 
   const shade = screenUV.sub(.5).length().pow2().mul(vignette).oneMinus();
   function createBranch(ssgi) {
     const lit = ssgi ? indirect.color : beauty.rgb.mul(mix(1, occlusion, aoStrength));
-    const composite = rtt(vec4(atmosphere.applyHaze(lit, hazeView, hazeWorld, hazeDepth), 1), null, null, { depthBuffer: false });
     const inverted = reflectedScene.sample(reflectedUV);
-    const refracted = mix(composite.rgb, inverted, mirageAmount);
+    const refracted = mix(atmosphere.applyHaze(lit, hazeView, hazeWorld, hazeDepth), inverted, mirageAmount);
     // Normal alpha blending into a clear target produces premultiplied RGB.
     // Keep fast particles outside temporal GI and the planar mirage capture.
     const dusty = refracted.mul(dustImage.a.oneMinus()).add(dustImage.rgb);
@@ -118,14 +117,14 @@ export function createPostProcessing(renderer, scene, camera, atmosphere, dust) 
     const mapped = renderOutput(vec4(mirageImage.rgb.add(glow.rgb).mul(shade), 1), renderer.toneMapping, renderer.outputColorSpace);
     const luminance = mapped.rgb.dot(vec3(.2126, .7152, .0722));
     const graded = mix(vec3(luminance), mapped.rgb, saturation).sub(.5).mul(contrast).add(.5);
-    return { composite, reflectionImage, mirageImage, glow, outputNode: vec4(graded.clamp(0, 1), 1) };
+    return { reflectionImage, mirageImage, glow, outputNode: vec4(graded.clamp(0, 1), 1) };
   }
   const branches = new Map([[true, createBranch(true)]]);
   let enabled = true, active = branches.get(true), settling = 8, lastView = null, lastLight = '', currentSettings;
   const pipeline = new RenderPipeline(renderer, active.outputNode); pipeline.outputColorTransform = false;
   const anchor = new Vector3();
   return { pipeline, scenePass, dustPass, indirect, occlusion, reflectedScene, clock, heat, heatUV: sampleUV, mirage, groundHeat, mirageScale, mirageNear, aoStrength, vignette, saturation, contrast, mirageFrame: { anchor, floor },
-    get composite() { return active.composite; }, get reflectionImage() { return active.reflectionImage; }, get mirageImage() { return active.mirageImage; }, get glow() { return active.glow; },
+    get reflectionImage() { return active.reflectionImage; }, get mirageImage() { return active.mirageImage; }, get glow() { return active.glow; },
     get needsFrame() { return enabled && settling > 0; },
     requestFrames() { settling = 8; },
     invalidate() { indirect.reset(); settling = 8; },
@@ -159,6 +158,6 @@ export function createPostProcessing(renderer, scene, camera, atmosphere, dust) 
       finally { renderer.toneMapping = tone; renderer.outputColorSpace = space; }
     },
     render() { reflectedScene.render(currentSettings, anchor); pipeline.render(); settling = Math.max(0, settling - 1); },
-    dispose() { reflectedScene.dispose(); pipeline.dispose(); scenePass.dispose(); dustPass.dispose(); indirect.dispose(); occlusion.dispose(); for (const branch of branches.values()) { branch.composite.dispose(); branch.reflectionImage.dispose(); branch.mirageImage.dispose(); branch.glow.dispose(); } }
+    dispose() { reflectedScene.dispose(); pipeline.dispose(); scenePass.dispose(); dustPass.dispose(); indirect.dispose(); occlusion.dispose(); for (const branch of branches.values()) { branch.reflectionImage.dispose(); branch.mirageImage.dispose(); branch.glow.dispose(); } }
   };
 }

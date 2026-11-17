@@ -1,4 +1,5 @@
-import { Vector3, DataUtils } from 'three/webgpu';
+import { RenderPipeline, Vector2, Vector3, DataUtils } from 'three/webgpu';
+import { rtt, vec2, vec4, screenUV, texture, uniform, getViewPosition, isBackgroundDepth } from 'three/tsl';
 
 const assert = (value, message) => { if (!value) throw new Error(message); };
 
@@ -16,6 +17,22 @@ export async function checkMirage(app = window.mirage) {
     camera.rotateZ(roll); camera.updateMatrixWorld();
   };
   app.manual = true; Object.assign(settings, { paused: true, drift: false, ssgi: false, heat: 0, ao: 0, dust: 0, wheelDust: 0 });
+  const bufferSize = uniform(new Vector2(1, 1));
+  const inverse = uniform(camera.projectionMatrixInverse), worldMatrix = uniform(camera.matrixWorld);
+  const beauty = texture(post.scenePass.getTextureNode('output').value, screenUV);
+  const depth = texture(post.scenePass.getTextureNode('depth').value, screenUV);
+  let adjacentDepth = depth.r;
+  for (const [x, y] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+    adjacentDepth = adjacentDepth.min(depth.sample(screenUV.add(vec2(x, y).div(bufferSize)).clamp(0, 1)).r);
+  }
+  adjacentDepth = adjacentDepth.toVar();
+  const adjacentView = getViewPosition(screenUV, adjacentDepth, inverse);
+  const distantCoverage = isBackgroundDepth(depth.r).and(isBackgroundDepth(adjacentDepth).not()).and(adjacentView.z.negate().greaterThan(5000));
+  const hazeDepth = distantCoverage.select(adjacentDepth, depth.r);
+  const hazeView = getViewPosition(screenUV, hazeDepth, inverse).toVar();
+  const hazeWorld = worldMatrix.mul(vec4(hazeView, 1)).xyz.toVar();
+  const baseline = rtt(vec4(app.atmosphere.applyHaze(beauty.rgb, hazeView, hazeWorld, hazeDepth), 1), null, null, { depthBuffer: false });
+  const baselinePipeline = new RenderPipeline(renderer, baseline); baselinePipeline.outputColorTransform = false;
   renderer.backend.device.pushErrorScope('validation');
   let failure;
   try {
@@ -32,7 +49,11 @@ export async function checkMirage(app = window.mirage) {
       settings.mirage = 1; await frame(); await frame();
       // Compare input/output of the same frame, excluding unrelated changes
       // in occlusion culling or cached shadows between two different frames.
-      const before = await read(post.composite.renderTarget), after = await read(post.mirageImage.renderTarget);
+      renderer.getDrawingBufferSize(bufferSize.value);
+      beauty.value = post.scenePass.getTextureNode('output').value;
+      depth.value = post.scenePass.getTextureNode('depth').value;
+      baselinePipeline.render();
+      const before = await read(baseline.renderTarget), after = await read(post.mirageImage.renderTarget);
       const diffuse = await read(post.scenePass.renderTarget, 1);
       floor ??= post.mirageFrame.floor.value;
       assert(Math.abs(post.mirageFrame.floor.value - floor) < 1e-9, `${name}: looking around shifted the ground plane`);
@@ -98,6 +119,7 @@ export async function checkMirage(app = window.mirage) {
     }
   } catch (error) { failure = error; }
   finally {
+    baselinePipeline.dispose(); baseline.dispose();
     const error = await renderer.backend.device.popErrorScope(); if (error) failure ||= new Error(error.message);
     Object.assign(settings, saved); camera.position.copy(eye); camera.quaternion.copy(rotation); camera.fov = fov; camera.updateProjectionMatrix();
     post.invalidate(); await frame(); app.manual = manual;
