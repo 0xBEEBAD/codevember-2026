@@ -24,7 +24,7 @@ export async function startExperiment(){
   const controls=new OrbitControls(camera,canvas);controls.enableDamping=true;controls.dampingFactor=.07;
   controls.minDistance=1.1;controls.maxDistance=10;controls.maxPolarAngle=Math.PI*.53;
   controls.autoRotate=true;controls.autoRotateSpeed=.32;controls.zoomSpeed=.65;
-  function resetView(){controls.target.set(0,.90,0);camera.position.set(.12,1.15,4.7);camera.position.sub(controls.target).multiplyScalar(Math.max(1,.95/camera.aspect)).add(controls.target);controls.update();}
+  function resetView(){controls.target.set(0,.90,0);camera.position.set(.12,1.15,5.3);camera.position.sub(controls.target).multiplyScalar(Math.max(1,.95/camera.aspect)).add(controls.target);controls.update();}
   resetView();
   const materials=createMaterials(),mushrooms=createMushrooms(materials),forest=await createForest(materials);
   const environmentMaterials=[...Object.values(materials).filter(value=>value.isMaterial),...forest.mossLOD.materials];
