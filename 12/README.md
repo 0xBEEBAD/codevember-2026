@@ -1,6 +1,8 @@
 # Codevember 2026 / 12 / Feather
 
-Copper feathers fall through a wheat field at sunset, with wind-driven trees, a small farm, and layered depth of field. Built with plain JavaScript, Three.js `WebGPURenderer`, and TSL. WebGPU is required; dependencies load from a pinned Three.js revision through an import map. There is no build step.
+Copper feathers fall through a wheat field at sunset, with wind-driven trees, a small farm, and layered depth of field. Built with plain JavaScript, Three.js `WebGPURenderer`, and TSL. WebGPU is required; dependencies load from [Three.js commit `4f5d6bc`](https://github.com/mrdoob/three.js/commit/4f5d6bc0c7ec777e06703b56c7b7089e99be11d5) via jsDelivr through an import map. There is no build step.
+
+The GUI module uses jsDelivr's Fastly endpoint at the same commit because the default CDN endpoint returns a package-size error for that file.
 
 ## Run
 
