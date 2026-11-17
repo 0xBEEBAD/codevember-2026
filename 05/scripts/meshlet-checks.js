@@ -1,5 +1,5 @@
 import { setMacroView } from './views.js';
-// Pinned-r187 diagnostic: inspect the GPU's requested counts, not the delayed
+// Pinned-revision diagnostic: inspect the GPU's requested counts, not the delayed
 // public triangle statistic, which clamps counts to the queue's capacity.
 export async function runMeshletChecks(app = window.moss) {
   const { settings, camera, controls, materials, renderer, meshlets, focusPoint } = app;

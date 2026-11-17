@@ -6,7 +6,9 @@ A moss-covered rock and three smaller companions rise from a wooded clearing, su
 
 Everything visible is procedural: individual moss leaves, fractured stones, lichen, soil, woodland, sky, and firefly lanterns. There are no image textures, imported models, or HDR files. A generated environment probe provides the reflections and ambient light.
 
-Plain JavaScript with import maps and no build step. Uses three.js **0.187.0**, its experimental **MeshletDrawingPipeline**, **ClusteredLighting**, and **SkyMesh**. **WebGPU is required.** Library modules load from jsDelivr, so an internet connection is needed.
+Plain JavaScript with import maps and no build step. Uses three.js [commit `4f5d6bc`](https://github.com/mrdoob/three.js/commit/4f5d6bc0c7ec777e06703b56c7b7089e99be11d5), its experimental **MeshletDrawingPipeline**, **ClusteredLighting**, and **SkyMesh**. **WebGPU is required.** Library modules load from jsDelivr, so an internet connection is needed.
+
+The GUI module uses jsDelivr's Fastly endpoint at the same commit because the default CDN endpoint returns a package-size error for that file.
 
 ## Run
 
@@ -45,7 +47,7 @@ Reduced-motion preferences start the scene paused on the ground. Hidden tabs sto
 
 The scene has approximately **20.7 million full-detail source triangles** with capsules hidden. Meshlet LOD and GPU culling reduce the submitted geometry according to the view. These counts exclude repeated shadow and post-processing draws.
 
-`moss-pipeline.js` contains two r187-specific safeguards:
+`moss-pipeline.js` contains two pinned-revision safeguards:
 
 1. Botanical variants use separate batches with enough draw-queue capacity for every cluster. The stock pipeline's delayed capacity adjustment can discard meshlets immediately after a rapid zoom. The guard rejects batches exceeding the upstream queue limit.
 2. Visible botanical batches use the first three LODs; coarser levels prune the canopy into isolated flecks. Woodland and shadow passes retain all six levels. Macro views tighten LOD error based on distance to the actual rock surface.
@@ -115,6 +117,6 @@ Videos, previews, and local reports stay in the ignored `exports/` directory.
 
 ## Sources
 
-- [three.js r187 MeshletDrawingPipeline](https://github.com/mrdoob/three.js/blob/r187/examples/jsm/pipelines/MeshletDrawingPipeline.js) and [MeshletGeometryUtils](https://github.com/mrdoob/three.js/blob/r187/examples/jsm/utils/MeshletGeometryUtils.js).
-- [SkyMesh](https://threejs.org/docs/pages/SkyMesh.html) and [r187 ClusteredLighting](https://github.com/mrdoob/three.js/blob/r187/examples/jsm/lighting/ClusteredLighting.js).
+- [three.js MeshletDrawingPipeline](https://github.com/mrdoob/three.js/blob/4f5d6bc0c7ec777e06703b56c7b7089e99be11d5/examples/jsm/pipelines/MeshletDrawingPipeline.js) and [MeshletGeometryUtils](https://github.com/mrdoob/three.js/blob/4f5d6bc0c7ec777e06703b56c7b7089e99be11d5/examples/jsm/utils/MeshletGeometryUtils.js).
+- [SkyMesh](https://threejs.org/docs/pages/SkyMesh.html) and [ClusteredLighting](https://github.com/mrdoob/three.js/blob/4f5d6bc0c7ec777e06703b56c7b7089e99be11d5/examples/jsm/lighting/ClusteredLighting.js).
 - [Mossy Forest by Greg Zaal / Poly Haven](https://polyhaven.com/a/mossy_forest), used as a visual reference. Its panorama is neither included nor loaded.

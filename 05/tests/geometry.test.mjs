@@ -80,7 +80,7 @@ test('stone intersects the forest floor and substrate only covers colony sites',
   }
 });
 
-test('the real r187 meshlet builder preserves full-detail leaf triangles and custom shading attributes', async () => {
+test('the pinned meshlet builder preserves full-detail leaf triangles and custom shading attributes', async () => {
   await ready;
   const geometry = createTuftGeometry(600);
   const meshlets = createMeshlets(geometry);

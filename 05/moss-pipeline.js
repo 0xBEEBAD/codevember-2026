@@ -1,9 +1,9 @@
 import { MeshletDrawingPipeline } from 'three/addons/pipelines/MeshletDrawingPipeline.js';
 
-// r187 calibrates draw-queue capacity from one view, then drops overflowing
+// The pinned pipeline calibrates draw-queue capacity from one view, then drops overflowing
 // meshlets until its 30-frame readback catches up. Macro zooms can expose many
 // more clusters immediately. Keep a complete queue for each botanical variant.
-// These two hooks are intentionally pinned to r187; see scripts/meshlet-checks.js.
+// These two hooks are intentionally pinned to the revision in index.html; see scripts/meshlet-checks.js.
 export class MossDrawingPipeline extends MeshletDrawingPipeline {
   createBatch(entry, capacity, view, culling) {
     const batch = super.createBatch(entry, capacity, view, culling);
