@@ -13,8 +13,14 @@ export function createPostProcessing(renderer, scene, camera, atmosphere, dust) 
   dust.connectDepth(depth);
   const dustPass = pass(dust.scene, camera, { samples: 0, depthBuffer: false });
   const dustImage = dustPass.getTextureNode('output');
-  const occlusion = ao(depth, null, camera);
-  occlusion.radius.value = 3; occlusion.thickness.value = 2; occlusion.samples.value = 16; occlusion.resolutionScale = .5;
+  let occlusion = null;
+  function getOcclusion() {
+    if (occlusion === null) {
+      occlusion = ao(depth, null, camera);
+      occlusion.radius.value = 3; occlusion.thickness.value = 2; occlusion.samples.value = 16; occlusion.resolutionScale = .5;
+    }
+    return occlusion;
+  }
   const aoStrength = uniform(.55);
   const indirect = createIndirectLighting(scenePass, camera, aoStrength);
   const clock = uniform(0), heat = uniform(1.6), mirage = uniform(.78), floor = uniform(0), groundHeat = uniform(1);
@@ -102,7 +108,7 @@ export function createPostProcessing(renderer, scene, camera, atmosphere, dust) 
   const vignette = uniform(.4), saturation = uniform(.95), contrast = uniform(1.06);
   const shade = screenUV.sub(.5).length().pow2().mul(vignette).oneMinus();
   function createBranch(ssgi) {
-    const lit = ssgi ? indirect.color : beauty.rgb.mul(mix(1, occlusion, aoStrength));
+    const lit = ssgi ? indirect.color : beauty.rgb.mul(mix(1, getOcclusion(), aoStrength));
     const inverted = reflectedScene.sample(reflectedUV);
     const refracted = mix(atmosphere.applyHaze(lit, hazeView, hazeWorld, hazeDepth), inverted, mirageAmount);
     // Normal alpha blending into a clear target produces premultiplied RGB.
@@ -123,8 +129,8 @@ export function createPostProcessing(renderer, scene, camera, atmosphere, dust) 
   let enabled = true, active = branches.get(true), settling = 8, lastView = null, lastLight = '', currentSettings;
   const pipeline = new RenderPipeline(renderer, active.outputNode); pipeline.outputColorTransform = false;
   const anchor = new Vector3();
-  return { pipeline, scenePass, dustPass, indirect, occlusion, reflectedScene, clock, heat, heatUV: sampleUV, mirage, groundHeat, mirageScale, mirageNear, aoStrength, vignette, saturation, contrast, mirageFrame: { anchor, floor },
-    get reflectionImage() { return active.reflectionImage; }, get mirageImage() { return active.mirageImage; }, get glow() { return active.glow; },
+  return { pipeline, scenePass, dustPass, indirect, reflectedScene, clock, heat, heatUV: sampleUV, mirage, groundHeat, mirageScale, mirageNear, aoStrength, vignette, saturation, contrast, mirageFrame: { anchor, floor },
+    get occlusion() { return occlusion; }, get reflectionImage() { return active.reflectionImage; }, get mirageImage() { return active.mirageImage; }, get glow() { return active.glow; },
     get needsFrame() { return enabled && settling > 0; },
     requestFrames() { settling = 8; },
     invalidate() { indirect.reset(); settling = 8; },
@@ -158,6 +164,6 @@ export function createPostProcessing(renderer, scene, camera, atmosphere, dust) 
       finally { renderer.toneMapping = tone; renderer.outputColorSpace = space; }
     },
     render() { reflectedScene.render(currentSettings, anchor); pipeline.render(); settling = Math.max(0, settling - 1); },
-    dispose() { reflectedScene.dispose(); pipeline.dispose(); scenePass.dispose(); dustPass.dispose(); indirect.dispose(); occlusion.dispose(); for (const branch of branches.values()) { branch.reflectionImage.dispose(); branch.mirageImage.dispose(); branch.glow.dispose(); } }
+    dispose() { reflectedScene.dispose(); pipeline.dispose(); scenePass.dispose(); dustPass.dispose(); indirect.dispose(); if (occlusion !== null) occlusion.dispose(); for (const branch of branches.values()) { branch.reflectionImage.dispose(); branch.mirageImage.dispose(); branch.glow.dispose(); } }
   };
 }
