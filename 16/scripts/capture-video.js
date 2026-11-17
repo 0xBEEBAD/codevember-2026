@@ -42,6 +42,12 @@ export function createCaptureSession({ renderSize=RENDER_SIZE, particles=PARTICL
     ctx.fillText('SETTINGS',SIZE-28,32);ctx.restore();
   }
   async function settle(time,frames=20) {
+    // Let a pending viewport resize finish before enforcing capture resolution.
+    await nextFrame();
+    if(source.width!==renderSize||source.height!==renderSize){
+      renderer.setPixelRatio(renderSize/SIZE);renderer.setSize(SIZE,SIZE,false);
+      camera.aspect=1;camera.updateProjectionMatrix();
+    }
     setCaptureCamera(app,time);
     // Clear temporal history through the public resize API at cuts. The first
     // resolve copies the new beauty buffer; warm frames settle meshlet culling.
@@ -106,7 +112,7 @@ export async function captureVideo({receiver='http://127.0.0.1:8036',duration=DU
     await post('/start',JSON.stringify({fps:FPS,totalFrames,width:SIZE,height:SIZE,renderSize:session.renderSize,
       particles:session.particles,duration,shots:SHOTS,overlays:session.overlays,cursor:false,audio:false,
       display:'SDR video from scene-linear HDR lighting',grading:session.app.inspect().grading,
-      initialSimulationTime:session.app.spores.clock.value,method:'Fixed 30 Hz simulation, six camera shots, supersampled render, ordered lossless PNG frames with encoder backpressure'}));
+      initialSimulationTime:session.app.spores.clock.value,method:`Fixed 30 Hz simulation, ${SHOTS.length} camera shots, supersampled render, ordered lossless PNG frames with encoder backpressure`}));
     started=true;state.status='capturing';
     for(let frame=0;frame<totalFrames;frame++){
       if(state.cancelled)throw new Error('Capture cancelled');

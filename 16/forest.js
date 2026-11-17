@@ -92,7 +92,9 @@ export async function createForest(materials) {
   const mossLOD=createMossLODMaterials(materials.moss);
   let leaves=0,tufts=0;
   for(let i=0;i<5;i++){
-    const near=createTuftGeometry(170+i*17),far=createTuftGeometry(170+i*17,7,2);
+    // Five curved rings give close leaves 40 triangles instead of 16.
+    // The pruned medium/far surfaces still come from the original coarse tuft.
+    const near=createTuftGeometry(170+i*17,7,6),far=createTuftGeometry(170+i*17,7,2);
     const details=createMossDetailLevels(near,far);far.dispose();
     for(const {center,matrices} of buckets[i].values()){
       const lod=new THREE.LOD();lod.position.copy(center);lod.autoUpdate=false;

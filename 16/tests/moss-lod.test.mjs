@@ -22,7 +22,9 @@ test('moss detail coverage stays continuous and sums to one across each boundary
 test('extracted moss detail levels preserve vertex attributes and valid triangle indices',async()=>{
   await mossLODReady;
   for(let i=0;i<5;i++){
-    const near=createTuftGeometry(170+i*17),far=createTuftGeometry(170+i*17,7,2);
+    const near=createTuftGeometry(170+i*17,7,6),far=createTuftGeometry(170+i*17,7,2);
+    assert.equal(near.userData.leaves,far.userData.leaves,'close detail must retain the same leaves');
+    assert.equal(near.userData.triangles-far.userData.triangles,near.userData.leaves*32);
     const levels=createMossDetailLevels(near,far);
     assert.ok(levels[0].index.count>levels[1].index.count&&levels[1].index.count>levels[2].index.count);
     for(const [level,g] of levels.entries()){

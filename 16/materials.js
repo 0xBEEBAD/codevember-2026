@@ -139,6 +139,10 @@ export function createMaterials() {
     .add(tissueNoise(near.mul(vec3(65,2.5,65)))).mul(.25).add(.5);
   const innerColor=mix(mix(color('#ffc38b'),color('#fff0c6'),attribute('anatomy','vec3').x.smoothstep(-.6,.6)),color('#ffa095'),blush.mul(.65));
   stem.emissiveNode=stem.emissiveNode.add(innerColor.mul(fibres.pow(3)).mul(glow).mul(.15).mul(tissue.x.mul(.65).add(.35)));
+  // Warm internal light fades down from the fin attachment into the stipe.
+  const neckGlow=tissue.x.smoothstep(.58,1).pow(1.4);
+  const neckTint=mix(color('#ffd28a'),color('#ffae88'),blush.mul(.55));
+  stem.emissiveNode=stem.emissiveNode.add(neckTint.mul(neckGlow).mul(fibres.mul(.3).add(.7)).mul(glow).mul(1.8));
   // Measure above the local soil, not as a fraction of the mushroom's height.
   // A small stable variation keeps neighboring stems from sharing a hard band.
   const rootHeight=mix(.28,.36,moisture);

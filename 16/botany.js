@@ -74,8 +74,8 @@ export function createTuftGeometry(seed, shootCount = 7, segments = 3) {
         const leafColor = color.clone().multiplyScalar(v === 0 ? 1.06 : .94);
         return vertex(point.x, point.y, point.z, leafColor, t, 1, .18 + smoothstep(.15, .95, t) * .82);
       };
-      // Near leaves have two curved diamond-section rings (16 triangles).
-      // Distant leaves retain a complete closed blade with one ring (8).
+      // Six segments give close leaves five curved rings (40 triangles).
+      // Three segments use 16 triangles; two retain a closed coarse blade (8).
       const base = bladePoint(0, 0, 0);
       for (let j = 1; j < segments; j++) {
         const u = j / segments;
