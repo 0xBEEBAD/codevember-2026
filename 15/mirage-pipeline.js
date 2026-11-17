@@ -4,6 +4,7 @@ import { StorageBufferAttribute } from 'three/webgpu';
 export class MirageDrawingPipeline extends MeshletDrawingPipeline {
   constructor(options) {
     super(options);
+    this._scaledClusters = new WeakSet();
     const pool = this._geometryPool;
     // Upstream grows these shared buffers by 50%. Spare capacity can cross
     // the device binding limit even when all actual geometry fits comfortably.
@@ -29,22 +30,22 @@ export class MirageDrawingPipeline extends MeshletDrawingPipeline {
   }
   _getClusters(geometry, group = null, prepare = false) {
     const clusters = super._getClusters(geometry, group, prepare);
-    if (clusters && clusters.mirageErrorScale === undefined) {
-      clusters.mirageErrorScale = geometry.userData.meshletErrorScale ?? 1;
-      for (const level of clusters.lodOffsetValues) level.w *= clusters.mirageErrorScale;
+    if (clusters !== null && !this._scaledClusters.has(clusters)) {
+      this._scaledClusters.add(clusters);
+      const scale = geometry.userData.meshletErrorScale ?? 1;
+      if (scale !== 1) for (const level of clusters.lodOffsetValues) level.w *= scale;
     }
-    // Vehicle contacts and tracks sample these exact triangles. A terrain
-    // spanning kilometres gets its LOD from its distant bounding-sphere
-    // center, allowing visible height changes directly beneath the rover.
-    // Keep its surface fixed while retaining GPU cluster/frustum culling.
-    if (clusters && geometry.userData.preserveSurface) clusters.lodCount = 1;
+    // Vehicle contacts, wheel tracks and stitched terrain rings sample these
+    // exact triangles. Keep their surfaces fixed across perspective and shadow
+    // passes while retaining GPU cluster and frustum culling.
+    if (clusters !== null && Boolean(geometry.userData.preserveSurface)) clusters.lodCount = 1;
     return clusters;
   }
   _getBatchKey(clusters) {
     // Articulated rover parts share a small material family. Batch these
     // together so every bolt assembly does not require its own GPU dispatch.
     const family = clusters.geometry.userData.meshletFamily;
-    if (family) return `${family}:${clusters.layoutKey}`;
+    if (typeof family === 'string') return `${family}:${clusters.layoutKey}`;
     // Gravel must not inherit the much larger per-object work queues of a cliff.
     return clusters;
   }
