@@ -8,7 +8,7 @@ import { filmicHDR } from './display-transform.js';
 export function createPostProcessing(renderer,scene,camera,sunlight,caustics,optics,current,displayOutput=null) {
   const scenePass=pass(scene,camera,{samples:0});
   const lit=scenePass.getTextureNode('output'),depth=scenePass.getTextureNode('depth');
-  const water=createWater(lit,depth,camera,sunlight,caustics,optics),exposure=uniform(1),adaptation=uniform(1);
+  const water=createWater(lit,depth,camera,sunlight,caustics,optics),exposure=uniform(.65),adaptation=uniform(1);
   // Marine snow in its own pass after the water, attenuated by its own
   // distance and hidden behind the scene's surfaces (marine-snow.js).
   const snow=current?createMarineSnow({camera,current,sunlight,caustics,optics,depth}):null;
@@ -30,11 +30,11 @@ export function createPostProcessing(renderer,scene,camera,sunlight,caustics,opt
   // on HDR displays (display-transform.js, display-output.js). The target
   // holds sRGB-encoded values; half float keeps those above white for FXAA.
   const headroom=uniform(1);
-  const graded=filmicHDR(radiance,grading.saturation,grading.contrast,headroom);
+  const graded=filmicHDR(radiance,grading.saturation,grading.contrast,headroom,exposure);
   const display=rtt(renderOutput(vec4(graded,1)),null,null,{depthBuffer:false,type:HalfFloatType});
   const pipeline=new RenderPipeline(renderer,fxaa(display));
   pipeline.outputColorTransform=false;
-  return {pipeline,scenePass,water,snow,exposure,adaptation,grading,headroom,radiance,
+  return {pipeline,scenePass,water,snow,exposure,adaptation,grading,headroom,
     renderHDR(){underwater.updateBefore({renderer});return underwater.renderTarget;},
     render(){headroom.value=displayOutput?displayOutput.headroom:1;pipeline.render();}};
 }

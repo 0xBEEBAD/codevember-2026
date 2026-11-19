@@ -1,7 +1,7 @@
 import GUI from 'three/addons/libs/lil-gui.module.min.js';
 
 export function createSettings(reducedMotion,nativeRatio){
-  return {flight:true,paused:reducedMotion,flightRate:1,current:1,density:.8,caustics:.65,rays:1,exposure:1,
+  return {flight:true,paused:reducedMotion,flightRate:1,current:1,density:.8,caustics:.65,rays:1,exposure:.65,
     translucency:1,adaptive:true,resolution:nativeRatio,meshlets:false,sound:true,
     temperature:.35,tint:0,saturation:1,contrast:1.15,vignette:2};
 }
@@ -58,10 +58,6 @@ export function createSettingsPanel(settings,actions,performanceInfo,nativeRatio
   const resolution=rendering.add(settings,'resolution',Math.min(.6,nativeRatio),nativeRatio,.05).name('Pixel ratio').listen().onChange(actions.resolution);
   rendering.add(settings,'meshlets').name('Show meshlets').onChange(actions.meshlets);
   rendering.close();
-  const controls=gui.addFolder('Controls');
-  for(const [name,value] of [['Look','Drag'],['Dive','Scroll'],['Swim','WASD · arrows'],['Sink · rise','Q · E'],['Swim faster','Shift'],
-    ['Swim on touch','Pinch'],['Pause','Space'],['Sound on · off','M'],['Restart flight','R'],['Hide interface','H']])controls.add({value},'value').name(name).disable();
-  controls.close();
   gui.close();gui.onChange(actions.changed);
   return {gui,
     // A new device pixel ratio changes the range of the ratio slider.

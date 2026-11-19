@@ -1,6 +1,7 @@
 // HDR and color checks on the GPU, adapted from day 16. Run in the page:
 //   await (await import('./scripts/hdr-checks.js')).checkHDR();
 // They verify the HDR data path, not the luminance of a physical display.
+// The frame checks need the float canvas: on an SDR display, load with ?hdr.
 import * as THREE from 'three/webgpu';
 import { float, mix, screenUV, uint, uniform, uniformArray, vec3, vec4 } from 'three/tsl';
 import { KNEE, filmicHDR } from '../display-transform.js';
@@ -41,11 +42,11 @@ export async function checkHDR(s=window.kelp){
     // The transform on its own.
     for(const [sat,con] of [[1,1.15],[1,1],[1.5,1.3],[0,.8]]){
       saturation.value=sat;contrast.value=con;
-      const before=await read(previousSDR(source,saturation,contrast)),sdr=await read(filmicHDR(source,saturation,contrast,float(1)));
+      const before=await read(previousSDR(source,saturation,contrast)),sdr=await read(filmicHDR(source,saturation,contrast,float(1),float(1)));
       check(`headroom 1 reproduces the previous SDR transform (saturation ${sat}, contrast ${con})`,difference(before,sdr)<1e-5,{maximumError:difference(before,sdr)});
     }
     saturation.value=1;contrast.value=1.15;
-    const sdr=await read(filmicHDR(source,saturation,contrast,float(1))),hdr=await read(filmicHDR(source,saturation,contrast,float(4)));
+    const sdr=await read(filmicHDR(source,saturation,contrast,float(1),float(1))),hdr=await read(filmicHDR(source,saturation,contrast,float(4),float(1)));
     const below=samples.map((v,i)=>.2126*v.x+.7152*v.y+.0722*v.z<=KNEE?i:-1).filter(i=>i>=0);
     const belowError=Math.max(...below.map(i=>difference(sdr,hdr,i,i+1)));
     check(`HDR leaves scene luminance up to the ${KNEE} knee unchanged`,below.length>=8&&belowError<1e-6,{samples:below.length,maximumError:belowError});
@@ -91,7 +92,7 @@ export async function checkHDR(s=window.kelp){
     }
     const pixels=frameSDR.length/3;
     const detail={format,peakSDR,peakHDR,aboveWhite:above/pixels,changedDark:changed/Math.max(1,dark),darker:darker/pixels};
-    check('the canvas is floating point',format==='rgba16float',detail);
+    check('the canvas is floating point (on an SDR display, load with ?hdr)',format==='rgba16float',detail);
     check('the SDR frame stays within white',peakSDR<=1+1e-3,detail);
     check('the HDR frame carries highlights above white to the canvas',peakHDR>1&&above>0,detail);
     check('dark and mid tones match the SDR frame',detail.changedDark<.001,detail);
@@ -104,10 +105,11 @@ export async function checkHDR(s=window.kelp){
     probeContext.configure({device,format:'rgba16float',toneMapping:{mode:'extended'}});
     const display=createDisplayOutput({backend:{context:probeContext}},query);
     try{
-      check('automatic mode selects SDR for an SDR display',!display.active&&display.headroom===1&&probeContext.getConfiguration().toneMapping.mode==='standard');
+      const presentation=()=>probeContext.getConfiguration().toneMapping.mode;
+      check('an SDR display gets headroom 1 with the presentation unchanged',!display.active&&display.headroom===1&&presentation()==='extended');
       query.matches=true;query.dispatchEvent(new Event('change'));
-      check('a display change enables HDR without recreating the device',display.active&&display.headroom===4&&probeContext.getConfiguration().toneMapping.mode==='extended');
-      display.setMode('sdr');check('the SDR override disables extended presentation',!display.active&&probeContext.getConfiguration().toneMapping.mode==='standard');
+      check('a display change enables HDR without reconfiguring the canvas',display.active&&display.headroom===4&&presentation()==='extended');
+      display.setMode('sdr');check('the SDR override lowers the headroom to 1 and keeps extended presentation',!display.active&&display.headroom===1&&presentation()==='extended');
     }finally{display.dispose();probeContext.unconfigure();}
     report={date:new Date().toISOString(),display:s.displayOutput.inspect(),...report,checks:checks.map(c=>c.name),
       ramp:levels.map((input,i)=>({input,sdr:sdr[i*4],hdr:hdr[i*4]}))};

@@ -5,7 +5,12 @@
 :root{--ink:#021a1f}
 /* Mid-water tone of the opening view, so the page fades into the scene. */
 html,body{background:#285a62;color:#e4e3cd}
-.ui-hidden header,.ui-hidden .lil-gui{display:none}
+.ui-hidden header,.ui-hidden .lil-gui,.ui-hidden #controls{display:none}
+/* Controls as plain text in the bottom left, where the view looks down into
+   darker water, so the text is light. */
+#controls{position:fixed;left:28px;bottom:22px;margin:0;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#d3e2dc;opacity:.72;pointer-events:none}
+#controls .touch{display:none}
+@media(pointer:coarse){#controls .keys{display:none}#controls .touch{display:inline}}
 .lil-gui.root{top:20px;right:28px}
 .lil-gui.root,.lil-gui.root .lil-gui{--background-color:#0a100df0;--text-color:#c9c9b9;--title-background-color:transparent;--title-text-color:#dfe3d2;--widget-color:#1d261d;--hover-color:#2b382b;--focus-color:#3a4a37;--number-color:#c8d39c;--string-color:#c8d39c;--font-size:11px;--font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .lil-gui.root,.lil-gui.root *{text-transform:uppercase}
@@ -15,4 +20,4 @@ html,body{background:#285a62;color:#e4e3cd}
 .lil-gui.root>.title{font-weight:400;letter-spacing:.16em}
 .lil-gui.root.closed{--title-text-color:var(--ink)}
 .lil-gui.root .title::before{position:static;padding-right:2px}
-@media(max-width:650px){header,.lil-gui.root>.title{letter-spacing:.08em}header{left:18px;top:20px;font-size:9px;letter-spacing:.08em}.lil-gui.root{right:16px;top:52px}}
+@media(max-width:650px){header,.lil-gui.root>.title{letter-spacing:.08em}header{left:18px;top:20px;font-size:9px;letter-spacing:.08em}.lil-gui.root{right:16px;top:52px}#controls{left:18px;bottom:18px;font-size:9px;letter-spacing:.06em}}
