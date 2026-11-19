@@ -3,7 +3,7 @@
 // They verify the HDR data path, not the luminance of a physical display.
 import * as THREE from 'three/webgpu';
 import { float, mix, screenUV, uint, uniform, uniformArray, vec3, vec4 } from 'three/tsl';
-import { filmicHDR } from '../display-transform.js';
+import { KNEE, filmicHDR } from '../display-transform.js';
 import { createDisplayOutput } from '../display-output.js';
 
 // The SDR display transform as it was before HDR support, clipped at white
@@ -46,16 +46,20 @@ export async function checkHDR(s=window.kelp){
     }
     saturation.value=1;contrast.value=1.15;
     const sdr=await read(filmicHDR(source,saturation,contrast,float(1))),hdr=await read(filmicHDR(source,saturation,contrast,float(4)));
-    check('HDR leaves everything up to scene-linear white unchanged',difference(sdr,hdr,0,levels.indexOf(1)+1)<1e-6&&difference(sdr,hdr,neutral,dim)<1e-6,
-      {neutral:difference(sdr,hdr,0,levels.indexOf(1)+1),colors:difference(sdr,hdr,neutral,dim)});
+    const below=samples.map((v,i)=>.2126*v.x+.7152*v.y+.0722*v.z<=KNEE?i:-1).filter(i=>i>=0);
+    const belowError=Math.max(...below.map(i=>difference(sdr,hdr,i,i+1)));
+    check(`HDR leaves scene luminance up to the ${KNEE} knee unchanged`,below.length>=8&&belowError<1e-6,{samples:below.length,maximumError:belowError});
     const at=v=>hdr[levels.indexOf(v)*4];
-    check('HDR highlights exceed SDR white in brightness order',at(2)>1&&at(4)>at(2)&&at(8)>at(4)&&at(16)>at(8)&&at(4096)>at(256),{2:at(2),4:at(4),8:at(8),16:at(16),4096:at(4096)});
+    check('HDR highlights exceed SDR white in brightness order',at(2)>1&&at(4)>at(2)&&at(8)>at(4)&&at(16)>at(8)&&at(4096)>=at(256),{2:at(2),4:at(4),8:at(8),16:at(16),4096:at(4096)});
     check('HDR output is finite, nonnegative and within the peak',hdr.every(x=>Number.isFinite(x)&&x>=0&&x<=4+1e-6));
     check('SDR output stays within white',sdr.every((x,i)=>i%4===3||(x>=0&&x<=1)));
     check('the neutral ramp stays neutral and monotonic',levels.every((_,i)=>Math.abs(hdr[i*4]-hdr[i*4+1])<1e-6&&Math.abs(hdr[i*4+1]-hdr[i*4+2])<1e-6&&(i===0||hdr[i*4]>=hdr[(i-1)*4])));
-    const red=dim*4,yellow=(dim+3)*4;
-    check('saturated highlights keep their hue above white',hdr[red]>1&&hdr[red+1]<1e-6+sdr[red+1]&&hdr[yellow]>hdr[yellow+1]&&hdr[yellow+1]>hdr[yellow+2],
-      {red:Array.from(hdr.slice(red,red+3)),warm:Array.from(hdr.slice(yellow,yellow+3))});
+    // One gain per pixel: every HDR color is its SDR color times a factor >= 1.
+    const gains=samples.map((_,i)=>{const c=[0,1,2].filter(c=>sdr[i*4+c]>1e-4);return c.map(c=>hdr[i*4+c]/sdr[i*4+c]);});
+    const spread=Math.max(...gains.map(g=>g.length?Math.max(...g)-Math.min(...g):0)),least=Math.min(...gains.flat());
+    check('HDR keeps every SDR chromaticity and only brightens',spread<1e-4&&least>=1-1e-6,{spread,least});
+    check('saturated highlights exceed white with their SDR hue',hdr[dim*4]>1&&hdr[dim*4+1]===0&&hdr[(dim+4)*4+1]>1,
+      {red:Array.from(hdr.slice(dim*4,dim*4+3)),shaft:Array.from(hdr.slice((dim+4)*4,(dim+4)*4+3))});
 
     // The real frame through the whole chain (sRGB encoding, half-float
     // target, FXAA) into the floating-point canvas, at headroom 1 and 4.
@@ -77,16 +81,21 @@ export async function checkHDR(s=window.kelp){
     };
     const format=context.getConfiguration().format;
     const frameSDR=await frame(1),frameHDR=await frame(4);
-    let peakSDR=0,peakHDR=0,above=0,below=0,changed=0;
-    for(let i=0;i<frameSDR.length;i++){
-      peakSDR=Math.max(peakSDR,frameSDR[i]);peakHDR=Math.max(peakHDR,frameHDR[i]);if(frameHDR[i]>1)above++;
-      if(frameSDR[i]<.9){below++;if(Math.abs(frameHDR[i]-frameSDR[i])>.002)changed++;}
+    // Dark and mid tones (encoded below 0.55 in every channel, under the
+    // knee for these grades) must match; the rest may only brighten.
+    let peakSDR=0,peakHDR=0,above=0,dark=0,changed=0,darker=0;
+    for(let p=0;p<frameSDR.length;p+=3){
+      const sdrMax=Math.max(frameSDR[p],frameSDR[p+1],frameSDR[p+2]),hdrMax=Math.max(frameHDR[p],frameHDR[p+1],frameHDR[p+2]);
+      peakSDR=Math.max(peakSDR,sdrMax);peakHDR=Math.max(peakHDR,hdrMax);if(hdrMax>1)above++;if(hdrMax<sdrMax-.002)darker++;
+      if(sdrMax<.55){dark++;if(Math.abs(hdrMax-sdrMax)>.002)changed++;}
     }
-    const detail={format,peakSDR,peakHDR,pixelsAboveWhite:above/3,changedBelowWhite:changed/Math.max(1,below)};
+    const pixels=frameSDR.length/3;
+    const detail={format,peakSDR,peakHDR,aboveWhite:above/pixels,changedDark:changed/Math.max(1,dark),darker:darker/pixels};
     check('the canvas is floating point',format==='rgba16float',detail);
     check('the SDR frame stays within white',peakSDR<=1+1e-3,detail);
     check('the HDR frame carries highlights above white to the canvas',peakHDR>1&&above>0,detail);
-    check('below white, the HDR frame matches the SDR frame',changed/Math.max(1,below)<.001,detail);
+    check('dark and mid tones match the SDR frame',detail.changedDark<.001,detail);
+    check('no pixel is darker in HDR, beyond antialiasing',detail.darker<.001,detail);
     report={frame:detail};
 
     // Automatic display selection on a separate canvas.

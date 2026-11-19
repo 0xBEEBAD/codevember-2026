@@ -4,7 +4,7 @@ import { SUN } from './water-optics.js';
 
 // Marine snow: aggregates drifting in a box that wraps around the camera,
 // carried by the mean current and the swell's orbital motion. They are drawn
-// 3-15 mm across, larger than most real aggregates, which would fall far
+// 2-8 mm across, larger than most real aggregates, which would fall far
 // below a pixel at screen resolution and vanish. They
 // are drawn in their own pass after the water composite, so each speck is
 // attenuated by the water between it and the camera, not the background's;
@@ -31,8 +31,8 @@ export function createMarineSnow({camera,current,sunlight,caustics,optics,depth}
   const wrapped=vec3(seed(0),seed(1),seed(2)).mul(BOX).add(drift).sub(cameraPosition).div(BOX).add(.5).fract().sub(.5);
   const at=cameraPosition.add(wrapped.mul(BOX));
   const center=at.add(current.waterDisplacement(at)).toVar();
-  // Log-uniform radius, 1.5-7.5 mm.
-  const radius=float(.0015).mul(float(5).pow(seed(3)));
+  // Log-uniform radius, 1-4 mm.
+  const radius=float(.001).mul(float(4).pow(seed(3)));
   const toCamera=center.sub(cameraPosition),distance=toCamera.length();
   const shown=radius.mul(2).max(distance.mul(pixelAngle).mul(MIN_PIXELS));
   const coverage=radius.mul(2).div(shown).pow2();

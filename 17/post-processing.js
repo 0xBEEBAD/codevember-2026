@@ -34,7 +34,7 @@ export function createPostProcessing(renderer,scene,camera,sunlight,caustics,opt
   const display=rtt(renderOutput(vec4(graded,1)),null,null,{depthBuffer:false,type:HalfFloatType});
   const pipeline=new RenderPipeline(renderer,fxaa(display));
   pipeline.outputColorTransform=false;
-  return {pipeline,scenePass,water,snow,exposure,adaptation,grading,headroom,
+  return {pipeline,scenePass,water,snow,exposure,adaptation,grading,headroom,radiance,
     renderHDR(){underwater.updateBefore({renderer});return underwater.renderTarget;},
     render(){headroom.value=displayOutput?displayOutput.headroom:1;pipeline.render();}};
 }
